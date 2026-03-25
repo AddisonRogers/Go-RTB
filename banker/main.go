@@ -1,12 +1,12 @@
 package banker
 
 import (
+	"encoding/json/v2"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-
-	"encoding/json/v2"
+	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
 	"github.com/redis/go-redis/v9"
@@ -63,10 +63,35 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// TODO add option to extend the campaign
+	// TODO edit throughput to accomendate the higher balance
 	// TODO any extra validation on the account or what have you
 
 	key := fmt.Sprintf("%s:balance", id)
-	_, err = s.cache.IncrBy(r.Context(), key, req.Amount)
+	newValue, err := s.cache.IncrBy(r.Context(), key, req.Amount)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if req.TTLExtension > 0 {
+		err = s.cache.Set(r.Context(), key, strconv.FormatInt(newValue, 10), time.Duration(req.TTLExtension))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	timeRemaining, err := s.cache.TTL(key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	TenMins := int64((10 * time.Minute).Seconds())
+	CountOfTenMins := (timeRemaining / TenMins) / 10
+	Throughput := req.Amount / CountOfTenMins
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:throughput", id), strconv.FormatInt(Throughput, 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -96,6 +121,36 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 	// move fund into hold
 
 	fmt.Fprintf(w, "Transaction authorized for account: %s\n", id)
+}
+
+// POST /accounts/{id}/create
+func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "Account ID cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	req := &shared.CreateAccount{}
+	err := json.UnmarshalRead(r.Body, req)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	}
+
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:balance", id), strconv.FormatInt(req.Amount, 10), time.Duration(req.Length))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	TenMins := int64((10 * time.Minute).Seconds())
+	CountOfTenMins := (req.Length / TenMins) / 10
+	Throughput := req.Amount / CountOfTenMins
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:throughput", id), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // POST /accounts/{id}/clear
@@ -169,6 +224,11 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:%s:campaign", id, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // GET /accounts/{id}/balance
@@ -200,6 +260,7 @@ func (s *DependencyService) handleGetBalance(w http.ResponseWriter, r *http.Requ
 	return
 }
 
+// TODO hhhhhh autho
 // DELETE /accounts/{id}
 func (s *DependencyService) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

@@ -9,13 +9,11 @@ type Topup struct {
 	Amount          int64  `json:"amount"`
 	Currency        string `json:"currency"`
 	PaymentMethodId string `json:"payment_method_id"`
+	TTLExtension    int64  `json:"ttl_extension"`
 }
 
 type Authorize struct {
-	Amount         int64  `json:"amount"`
-	Currency       string `json:"currency"`
-	MerchantId     string `json:"merchant_id"`
-	TransactionRef string `json:"transaction_ref"`
+	Amount int64 `json:"amount"`
 }
 
 type Clear struct {
@@ -26,6 +24,12 @@ type Clear struct {
 type Balance struct {
 	Currency string `json:"currency"`
 	Amount   int64  `json:"amount"`
+}
+
+type CreateAccount struct {
+	Amount int64 `json:"amount"`
+	Length int64 `json:"length"`
+	// AmountThroughput int    `json:"amount_throughput"`
 }
 
 type Storer interface {
