@@ -56,7 +56,7 @@ func main() {
 func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	req := &shared.Topup{}
-	err := json.UnmarshalRead(r.Body, &req)
+	err := json.UnmarshalRead(r.Body, req)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return

@@ -6,9 +6,9 @@ import (
 )
 
 type Topup struct {
-	Amount            int64
-	Currency          string
-	Payment_method_id string
+	Amount          int64  `json:"amount"`
+	Currency        string `json:"currency"`
+	PaymentMethodId string `json:"payment_method_id"`
 }
 
 type Authorize struct {
