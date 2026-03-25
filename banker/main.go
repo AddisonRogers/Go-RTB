@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"encoding/json/v2"
 
@@ -64,7 +65,8 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 
 	// TODO any extra validation on the account or what have you
 
-	_, err = s.cache.IncrBy(r.Context(), id, req.Amount)
+	key := fmt.Sprintf("%s:balance", id)
+	_, err = s.cache.IncrBy(r.Context(), key, req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -76,19 +78,126 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 // POST /accounts/{id}/authorize
 func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	if id == "" {
+		http.Error(w, "Account ID cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	req := &shared.Authorize{}
+	err := json.UnmarshalRead(r.Body, req)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// check time since previous and calculate the campaign / second
+
+	// move fund into hold
+
 	fmt.Fprintf(w, "Transaction authorized for account: %s\n", id)
 }
 
 // POST /accounts/{id}/clear
 func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	fmt.Fprintf(w, "Funds cleared for account: %s\n", id)
+
+	if id == "" {
+		http.Error(w, "Account ID cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	req := &shared.Clear{}
+	err := json.UnmarshalRead(r.Body, req)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// confirm that the hold is higher than
+	val, err := s.cache.Get(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId))
+	if err != nil {
+		return
+	}
+
+	if val == "" {
+		http.Error(w, "Hold not found", http.StatusNotFound)
+	}
+
+	holdAmount, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid hold value", http.StatusInternalServerError)
+		return
+	}
+
+	// This *shouldnt* happen, but just in case
+	if holdAmount < req.FinalAmount {
+		http.Error(w, "Hold is not high enough", http.StatusBadRequest)
+		_, err = s.cache.IncrBy(r.Context(), fmt.Sprintf("%s:balance", id), req.FinalAmount-holdAmount)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		err := s.cache.Delete(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId))
+
+		// TODO Big issue here, if the delete fails, we're in a bad state
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		return
+	}
+
+	// TODO handle all erros by retrying the operation
+	remaining, err := s.cache.DecrBy(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId), req.FinalAmount)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = s.cache.IncrBy(r.Context(), fmt.Sprintf("%s:balance", id), remaining)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = s.cache.Delete(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GET /accounts/{id}/balance
 func (s *DependencyService) handleGetBalance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	fmt.Fprintf(w, "Current balance for account %s: $0.00\n", id)
+
+	if id == "" {
+		http.Error(w, "Account ID cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	balance, err := s.cache.Get(r.Context(), fmt.Sprintf("%s:balance", id))
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if balance == "" {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// TODO return a json
+	_, err = w.Write([]byte(balance))
+	if err != nil {
+		return
+	}
+	return
 }
 
 // DELETE /accounts/{id}

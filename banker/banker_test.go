@@ -57,7 +57,7 @@ func TestHandleTopUp(t *testing.T) {
 		t.Fatalf("unexpected body: got %q want %q", got, expectedBody)
 	}
 
-	gotBalance, err := svc.cache.Get(req.Context(), "123")
+	gotBalance, err := svc.cache.Get(req.Context(), "123:balance")
 	if err != nil {
 		t.Fatalf("expected redis value, got error: %v", err)
 	}

@@ -12,15 +12,20 @@ type Topup struct {
 }
 
 type Authorize struct {
-	amount          int64
-	currency        string
-	merchant_id     string
-	transaction_ref string
+	Amount         int64  `json:"amount"`
+	Currency       string `json:"currency"`
+	MerchantId     string `json:"merchant_id"`
+	TransactionRef string `json:"transaction_ref"`
 }
 
 type Clear struct {
-	authorize_id string
-	final_amount int64
+	AuthorizeId string `json:"authorize_id"`
+	FinalAmount int64  `json:"final_amount"`
+}
+
+type Balance struct {
+	Currency string `json:"currency"`
+	Amount   int64  `json:"amount"`
 }
 
 type Storer interface {
