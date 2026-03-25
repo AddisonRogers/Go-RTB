@@ -13,10 +13,10 @@ import (
 )
 
 type DependencyService struct {
-	cache Cacher
+	cache shared.Storer
 }
 
-func NewBankerService(c Cacher) *DependencyService {
+func NewBankerService(c shared.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -63,8 +63,6 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO add option to extend the campaign
-	// TODO edit throughput to accomendate the higher balance
 	// TODO any extra validation on the account or what have you
 
 	key := fmt.Sprintf("%s:balance", id)
@@ -82,14 +80,15 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	timeRemaining, err := s.cache.TTL(key)
+	timeRemaining, err := s.cache.TTL(r.Context(), key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	TenMins := int64((10 * time.Minute).Seconds())
-	CountOfTenMins := (timeRemaining / TenMins) / 10
+	TimeRemainingValue := int64(timeRemaining.Seconds())
+	CountOfTenMins := (TimeRemainingValue / TenMins) / 10
 	Throughput := req.Amount / CountOfTenMins
 	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:throughput", id), strconv.FormatInt(Throughput, 10), 10*60)
 	if err != nil {

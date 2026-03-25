@@ -69,3 +69,12 @@ func (r *RedisAdapter) DecrBy(ctx context.Context, key string, value int64) (int
 	}
 	return r.client.IncrBy(ctx, key, value).Result()
 }
+
+// TTL returns the remaining time to live of a key.
+func (r *RedisAdapter) TTL(ctx context.Context, key string) (time.Duration, error) {
+	ttl, err := r.client.TTL(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	return ttl, nil
+}

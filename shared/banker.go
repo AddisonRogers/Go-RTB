@@ -33,12 +33,13 @@ type CreateAccount struct {
 }
 
 type Storer interface {
-	Init(addr string) (*Storer, error)
-	Close()
 	Set(ctx context.Context, key, value string, ttl time.Duration) error
 	Get(ctx context.Context, key string) (string, error)
-	Delete(ctx context.Context, keys ...string) error
+	Delete(ctx context.Context, key string) error
+	IncrBy(ctx context.Context, key string, value int64) (int64, error)
+	DecrBy(ctx context.Context, key string, value int64) (int64, error)
 	Exists(ctx context.Context, key string) (bool, error)
 	Incr(ctx context.Context, key string) (int64, error)
 	Decr(ctx context.Context, key string) (int64, error)
+	TTL(ctx context.Context, key string) (time.Duration, error)
 }
