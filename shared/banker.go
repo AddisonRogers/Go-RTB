@@ -42,4 +42,5 @@ type Storer interface {
 	Incr(ctx context.Context, key string) (int64, error)
 	Decr(ctx context.Context, key string) (int64, error)
 	TTL(ctx context.Context, key string) (time.Duration, error)
+	FindKeysByValue(ctx context.Context, target string) ([]string, error)
 }

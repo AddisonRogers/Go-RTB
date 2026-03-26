@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AddisonRogers/Go-RTB/shared"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 )
@@ -22,7 +23,7 @@ func newTestService(t *testing.T) (*DependencyService, func()) {
 		Addr: mr.Addr(),
 	})
 
-	svc := NewBankerService(NewRedisAdapter(rdb))
+	svc := NewBankerService(shared.NewRedisAdapter(rdb))
 
 	cleanup := func() {
 		_ = rdb.Close()

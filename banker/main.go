@@ -35,7 +35,7 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := NewRedisAdapter(rdb)
+	redisAdapter := shared.NewRedisAdapter(rdb)
 
 	// Inject the adapter (which implements Cacher) into our service
 	svc := NewBankerService(redisAdapter)
@@ -116,6 +116,21 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 	}
 
 	// check time since previous and calculate the campaign / second
+	values, err := s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:campaign:*", id))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	held, err := s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:hold:*", id))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// add values and held and compare to throughput
+
+	s.cache.Get(r.Context(), fmt.Sprintf("%s:throughput", id))
 
 	// move fund into hold
 
@@ -169,7 +184,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// confirm that the hold is higher than
-	val, err := s.cache.Get(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId))
+	val, err := s.cache.Get(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId))
 	if err != nil {
 		return
 	}
@@ -206,7 +221,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// TODO handle all erros by retrying the operation
-	remaining, err := s.cache.DecrBy(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId), req.FinalAmount)
+	remaining, err := s.cache.DecrBy(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId), req.FinalAmount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -218,15 +233,16 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err = s.cache.Delete(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:%s:campaign", id, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:campaign:%s", id, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 

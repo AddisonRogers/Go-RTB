@@ -1,4 +1,4 @@
-package banker
+package shared
 
 import (
 	"context"
@@ -77,4 +77,39 @@ func (r *RedisAdapter) TTL(ctx context.Context, key string) (time.Duration, erro
 		return 0, err
 	}
 	return ttl, nil
+}
+
+func (r *RedisAdapter) FindKeysByValue(ctx context.Context, target string) ([]string, error) {
+	var (
+		cursor uint64
+		keys   []string
+	)
+
+	for {
+		batch, nextCursor, err := r.client.Scan(ctx, cursor, "*", 1000).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, key := range batch {
+			val, err := r.client.Get(ctx, key).Result()
+			if errors.Is(err, redis.Nil) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			if val == target {
+				keys = append(keys, key)
+			}
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return keys, nil
 }
