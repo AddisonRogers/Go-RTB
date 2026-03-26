@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
+    ports:
+      - "6379:6379"
