@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	_ "net/http"
 	_ "strings"
@@ -69,11 +70,20 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 			}
 
 			for _, jobID := range jobs {
-				// 2. Atomically remove it so other workers don't grab it
 				removed, _ := s.cache.ZRem(ctx, "delayed_jobs", jobID).Result()
 				if removed > 0 {
-					// 3. DO WORK HERE
-					fmt.Printf("Processing job: %s\n", jobID)
+					job := &shared.Campaign{}
+					err := json.Unmarshal([]byte(jobID), job)
+					if err != nil {
+						fmt.Println("Error unmarshalling job", err)
+						continue
+					}
+
+					_, err = s.cache.DecrBy(ctx, fmt.Sprintf("%s:actualth", job.AccountID), job.Amount)
+					if err != nil {
+						fmt.Println("Error decreasing actual throughput", err)
+						continue
+					}
 				}
 			}
 		}

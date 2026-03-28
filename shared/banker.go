@@ -34,6 +34,11 @@ type CreateAccount struct {
 	// AmountThroughput int    `json:"amount_throughput"`
 }
 
+type Campaign struct {
+	AccountID string `json:"account_id"`
+	Amount    int64  `json:"amount"`
+}
+
 type Storer interface {
 	Set(ctx context.Context, key, value string, ttl time.Duration) error
 	Get(ctx context.Context, key string) (string, error)
@@ -47,4 +52,5 @@ type Storer interface {
 	FindKeysByValue(ctx context.Context, target string) ([]string, error)
 	ZRangeArgs(ctx context.Context, args redis.ZRangeArgs) ([]string, error)
 	ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
+	ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd
 }

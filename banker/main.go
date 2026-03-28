@@ -262,6 +262,19 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	_, err = s.cache.ZAdd(r.Context(), fmt.Sprintf("%s:campaigns", id),
+		redis.Z{
+			Score: float64(time.Now().Add(10 * time.Minute).Unix()),
+			Member: shared.Campaign{
+				AccountID: id,
+				Amount:    req.FinalAmount,
+			},
+		}).Result()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GET /accounts/{id}/balance

@@ -121,3 +121,7 @@ func (r *RedisAdapter) ZRangeArgs(ctx context.Context, args redis.ZRangeArgs) ([
 func (r *RedisAdapter) ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
 	return r.client.ZRem(ctx, key, members...)
 }
+
+func (r *RedisAdapter) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
+	return r.client.ZAdd(ctx, key, members...)
+}
