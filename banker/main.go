@@ -89,6 +89,9 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 	TenMins := int64((10 * time.Minute).Seconds())
 	TimeRemainingValue := int64(timeRemaining.Seconds())
 	CountOfTenMins := (TimeRemainingValue / TenMins) / 10
+	if CountOfTenMins == 0 {
+		CountOfTenMins = 1
+	}
 	Throughput := req.Amount / CountOfTenMins
 	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:throughput", id), strconv.FormatInt(Throughput, 10), 10*60)
 	if err != nil {
@@ -116,13 +119,13 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 	}
 
 	// check time since previous and calculate the campaign / second
-	values, err := s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:campaign:*", id))
+	_, err = s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:campaign:*", id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	held, err := s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:hold:*", id))
+	_, err = s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:hold:*", id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -130,7 +133,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 
 	// add values and held and compare to throughput
 
-	s.cache.Get(r.Context(), fmt.Sprintf("%s:throughput", id))
+	_, _ = s.cache.Get(r.Context(), fmt.Sprintf("%s:throughput", id))
 
 	// move fund into hold
 
@@ -159,8 +162,17 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 
 	TenMins := int64((10 * time.Minute).Seconds())
 	CountOfTenMins := (req.Length / TenMins) / 10
+	if CountOfTenMins == 0 {
+		CountOfTenMins = 1
+	}
 	Throughput := req.Amount / CountOfTenMins
-	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:throughput", id), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:targetth", id), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:actualth", id), strconv.FormatInt(0, 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -240,6 +252,12 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:campaign:%s", id, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = s.cache.IncrBy(r.Context(), fmt.Sprintf("%s:actualth", id), req.FinalAmount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -3,6 +3,8 @@ package shared
 import (
 	"context"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type Topup struct {
@@ -43,4 +45,6 @@ type Storer interface {
 	Decr(ctx context.Context, key string) (int64, error)
 	TTL(ctx context.Context, key string) (time.Duration, error)
 	FindKeysByValue(ctx context.Context, target string) ([]string, error)
+	ZRangeArgs(ctx context.Context, args redis.ZRangeArgs) ([]string, error)
+	ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 }

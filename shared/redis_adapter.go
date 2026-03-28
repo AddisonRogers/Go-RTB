@@ -67,7 +67,7 @@ func (r *RedisAdapter) DecrBy(ctx context.Context, key string, value int64) (int
 	if value == 0 {
 		return 0, errors.New("value cannot be zero")
 	}
-	return r.client.IncrBy(ctx, key, value).Result()
+	return r.client.DecrBy(ctx, key, value).Result()
 }
 
 // TTL returns the remaining time to live of a key.
@@ -112,4 +112,12 @@ func (r *RedisAdapter) FindKeysByValue(ctx context.Context, target string) ([]st
 	}
 
 	return keys, nil
+}
+
+func (r *RedisAdapter) ZRangeArgs(ctx context.Context, args redis.ZRangeArgs) ([]string, error) {
+	return r.client.ZRangeArgs(ctx, args).Result()
+}
+
+func (r *RedisAdapter) ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
+	return r.client.ZRem(ctx, key, members...)
 }
