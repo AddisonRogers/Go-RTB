@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -43,11 +44,12 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Route Registrations
-	mux.HandleFunc("POST /accounts/{id}/topup", svc.handleTopUp)
+	mux.HandleFunc("PUT /accounts/{id}/topup", svc.handleTopUp)
 	mux.HandleFunc("POST /accounts/{id}/authorize", svc.handleAuthorize)
 	mux.HandleFunc("POST /accounts/{id}/clear", svc.handleClear)
 	mux.HandleFunc("GET /accounts/{id}/balance", svc.handleGetBalance)
 	mux.HandleFunc("DELETE /accounts/{id}", svc.handleDeleteAccount)
+	mux.HandleFunc("POST /accounts/{id}/create", svc.createCampaign)
 
 	log.Print("Listening on :3000...")
 	log.Fatal(http.ListenAndServe(":3000", mux))
@@ -118,26 +120,77 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// check time since previous and calculate the campaign / second
-	_, err = s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:campaign:*", id))
+	actualth, err := s.cache.Get(r.Context(), fmt.Sprintf("%s:actualth", id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.FindKeysByValue(r.Context(), fmt.Sprintf("%s:hold:*", id))
+	actualthInt, err := strconv.ParseInt(actualth, 10, 64)
+	if err != nil {
+		http.Error(w, "Failed to parse actual throughput", http.StatusInternalServerError)
+		return
+	}
+
+	targetth, err := s.cache.Get(r.Context(), fmt.Sprintf("%s:targetth", id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// add values and held and compare to throughput
+	targetthInt, err := strconv.ParseInt(targetth, 10, 64)
+	if err != nil {
+		http.Error(w, "Failed to parse target throughput", http.StatusInternalServerError)
+		return
+	}
 
-	_, _ = s.cache.Get(r.Context(), fmt.Sprintf("%s:throughput", id))
+	if actualthInt >= targetthInt {
+		http.Error(w, "Account throughput limit reached", http.StatusTooManyRequests)
+		return
+	}
 
-	// move fund into hold
+	if req.Amount > targetthInt-actualthInt {
+		http.Error(w, "Insufficient throughput capacity", http.StatusPaymentRequired)
+		return
+	}
 
-	fmt.Fprintf(w, "Transaction authorized for account: %s\n", id)
+	// generate authorize id
+	authorizeID := uuid.NewString()
+
+	err = s.cache.Set(r.Context(), fmt.Sprintf("%s:hold:%s", id, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = s.cache.IncrBy(r.Context(), fmt.Sprintf("%s:actualth", id), req.Amount)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = s.cache.DecrBy(r.Context(), fmt.Sprintf("%s:balance", id), req.Amount)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	resp := shared.AuthorizeResponse{
+		AuthorizeID: authorizeID,
+	}
+
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		return
+	}
 }
 
 // POST /accounts/{id}/create
@@ -221,7 +274,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		err := s.cache.Delete(r.Context(), fmt.Sprintf("%s:%s:hold", id, req.AuthorizeId))
+		err := s.cache.Delete(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId))
 
 		// TODO Big issue here, if the delete fails, we're in a bad state
 		if err != nil {
@@ -233,16 +286,18 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// TODO handle all erros by retrying the operation
-	remaining, err := s.cache.DecrBy(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId), req.FinalAmount)
+	remaining := holdAmount - req.FinalAmount
+	err = s.cache.Delete(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), fmt.Sprintf("%s:balance", id), remaining)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	if remaining < 0 {
+		_, err = s.cache.IncrBy(r.Context(), fmt.Sprintf("%s:balance", id), remaining)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
 
 	err = s.cache.Delete(r.Context(), fmt.Sprintf("%s:hold:%s", id, req.AuthorizeId))
@@ -263,13 +318,19 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	member, err := json.Marshal(shared.Campaign{
+		AccountID: id,
+		Amount:    req.FinalAmount,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	_, err = s.cache.ZAdd(r.Context(), fmt.Sprintf("%s:campaigns", id),
 		redis.Z{
-			Score: float64(time.Now().Add(10 * time.Minute).Unix()),
-			Member: shared.Campaign{
-				AccountID: id,
-				Amount:    req.FinalAmount,
-			},
+			Score:  float64(time.Now().Add(10 * time.Minute).Unix()),
+			Member: member,
 		}).Result()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

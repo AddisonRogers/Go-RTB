@@ -18,6 +18,10 @@ type Authorize struct {
 	Amount int64 `json:"amount"`
 }
 
+type AuthorizeResponse struct {
+	AuthorizeID string `json:"authorize_id"`
+}
+
 type Clear struct {
 	AuthorizeId string `json:"authorize_id"`
 	FinalAmount int64  `json:"final_amount"`
