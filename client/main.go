@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
 	"github.com/redis/go-redis/v9"
@@ -43,17 +41,13 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Route Registrations
-	mux.HandleFunc("PUT /accounts/{id}/topup", svc.handleTopUp)
-	mux.HandleFunc("POST /accounts/{id}/authorize", svc.handleAuthorize)
-	mux.HandleFunc("POST /accounts/{id}/clear", svc.handleClear)
-	mux.HandleFunc("GET /accounts/{id}/balance", svc.handleGetBalance)
-	mux.HandleFunc("DELETE /accounts/{id}", svc.handleDeleteAccount)
-	mux.HandleFunc("POST /accounts/{id}/create", svc.createCampaign)
 	mux.HandleFunc("/health", healthCheck)
 
 	log.Print("Listening on :3000...")
 	log.Fatal(http.ListenAndServe(":3000", mux))
 }
+
+// TODO auth + autho
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
@@ -62,3 +56,15 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func (s *DependencyService) createAccount(w http.ResponseWriter, r *http.Request) {}
+
+func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Request) {}
+
+// this also includes topup actions
+func (s *DependencyService) updateCampaign(w http.ResponseWriter, r *http.Request) {}
+func (s *DependencyService) deleteCampaign(w http.ResponseWriter, r *http.Request) {}
+
+func (s *DependencyService) getCampaigns(w http.ResponseWriter, r *http.Request) {}
+func (s *DependencyService) getCampaign(w http.ResponseWriter, r *http.Request)  {}
+func (s *DependencyService) getAccount(w http.ResponseWriter, r *http.Request)   {}
