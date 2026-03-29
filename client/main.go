@@ -57,9 +57,13 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *DependencyService) createAccount(w http.ResponseWriter, r *http.Request) {}
+func (s *DependencyService) createAccount(w http.ResponseWriter, r *http.Request) {
+	// heavily linked with the whole auth / autho
+}
 
-func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Request) {}
+func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Request) {
+
+}
 
 // this also includes topup actions
 func (s *DependencyService) updateCampaign(w http.ResponseWriter, r *http.Request) {}
