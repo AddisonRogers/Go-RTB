@@ -57,7 +57,7 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 			now := time.Now().Unix()
 
 			jobs, err := s.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
-				Key:     "delayed_jobs",
+				Key:     shared.DelayedJobsKey,
 				Start:   "-inf", // Start from the oldest possible job
 				Stop:    now,    // Stop at "Right Now"
 				ByScore: true,   // Crucial: treat Start/Stop as scores, not ranks
@@ -70,7 +70,7 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 			}
 
 			for _, jobID := range jobs {
-				removed, _ := s.cache.ZRem(ctx, "delayed_jobs", jobID).Result()
+				removed, _ := s.cache.ZRem(ctx, shared.DelayedJobsKey, jobID).Result()
 				if removed > 0 {
 					job := &shared.Campaign{}
 					err := json.Unmarshal([]byte(jobID), job)
@@ -79,7 +79,7 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 						continue
 					}
 
-					_, err = s.cache.DecrBy(ctx, fmt.Sprintf("%s:actualth", job.AccountID), job.Amount)
+					_, err = s.cache.DecrBy(ctx, shared.AccountActualThroughputKey(job.AccountID), job.Amount)
 					if err != nil {
 						fmt.Println("Error decreasing actual throughput", err)
 						continue

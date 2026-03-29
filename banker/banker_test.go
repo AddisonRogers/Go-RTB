@@ -60,7 +60,7 @@ func TestHandleTopUp(t *testing.T) {
 		t.Fatalf("unexpected body: got %q want %q", got, expectedBody)
 	}
 
-	gotBalance, err := svc.cache.Get(req.Context(), "123:balance")
+	gotBalance, err := svc.cache.Get(req.Context(), shared.AccountBalanceKey("123"))
 	if err != nil {
 		t.Fatalf("expected redis value, got error: %v", err)
 	}
@@ -95,9 +95,9 @@ func TestHandleAuthorize(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
-	actualTHKey := fmt.Sprintf("%s:actualth", accountID)
-	targetTHKey := fmt.Sprintf("%s:targetth", accountID)
-	balanceKey := fmt.Sprintf("%s:balance", accountID)
+	actualTHKey := shared.AccountActualThroughputKey(accountID)
+	targetTHKey := shared.AccountTargetThroughputKey(accountID)
+	balanceKey := shared.AccountBalanceKey(accountID)
 
 	// Seed state so authorize can succeed.
 	_ = svc.cache.Set(t.Context(), actualTHKey, "10", 0)
@@ -123,7 +123,7 @@ func TestHandleAuthorize(t *testing.T) {
 		t.Fatal("expected non-empty authorize_id")
 	}
 
-	holdKey := fmt.Sprintf("%s:hold:%s", accountID, resp.AuthorizeID)
+	holdKey := shared.AccountHoldKey(accountID, resp.AuthorizeID)
 	holdAmount, err := svc.cache.Get(t.Context(), holdKey)
 	if err != nil {
 		t.Fatalf("expected hold key to exist: %v", err)
@@ -155,9 +155,9 @@ func TestHandleClear(t *testing.T) {
 
 	accountID := "123"
 	authID := "auth_456"
-	holdKey := fmt.Sprintf("%s:hold:%s", accountID, authID)
-	balanceKey := fmt.Sprintf("%s:balance", accountID)
-	actualTHKey := fmt.Sprintf("%s:actualth", accountID)
+	holdKey := shared.AccountHoldKey(accountID, authID)
+	balanceKey := shared.AccountBalanceKey(accountID)
+	actualTHKey := shared.AccountActualThroughputKey(accountID)
 
 	// Setup: initial hold and balance
 	_ = svc.cache.Set(t.Context(), holdKey, "100", 0)
@@ -196,7 +196,7 @@ func TestHandleClear(t *testing.T) {
 	}
 
 	// Verify campaign key set
-	campaignKey := fmt.Sprintf("%s:campaign:%s", accountID, authID)
+	campaignKey := shared.AccountCampaignKey(accountID, authID)
 	val, _ = svc.cache.Get(t.Context(), campaignKey)
 	if val != "70" {
 		t.Errorf("expected campaign value 70, got %s", val)
@@ -209,9 +209,9 @@ func TestHandleClear_HoldTooLow(t *testing.T) {
 
 	accountID := "123"
 	authID := "auth_456"
-	holdKey := fmt.Sprintf("%s:hold:%s", accountID, authID)
-	balanceKey := fmt.Sprintf("%s:balance", accountID)
-	actualTHKey := fmt.Sprintf("%s:actualth", accountID)
+	holdKey := shared.AccountHoldKey(accountID, authID)
+	balanceKey := shared.AccountBalanceKey(accountID)
+	actualTHKey := shared.AccountActualThroughputKey(accountID)
 
 	_ = svc.cache.Set(t.Context(), holdKey, "50", 0)
 	_ = svc.cache.Set(t.Context(), balanceKey, "500", 0)
@@ -260,7 +260,7 @@ func TestHandleClear_HoldTooLow(t *testing.T) {
 	}
 
 	// Campaign key should not be created
-	campaignKey := fmt.Sprintf("%s:campaign:%s", accountID, authID)
+	campaignKey := shared.AccountCampaignKey(accountID, authID)
 	exists, err = svc.cache.Exists(t.Context(), campaignKey)
 	if err != nil {
 		t.Fatalf("expected exists check to succeed: %v", err)
@@ -275,7 +275,7 @@ func TestHandleGetBalance(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
-	balanceKey := fmt.Sprintf("%s:balance", accountID)
+	balanceKey := shared.AccountBalanceKey(accountID)
 	_ = svc.cache.Set(t.Context(), balanceKey, "1234", 0)
 
 	req := httptest.NewRequest(http.MethodGet, "/accounts/123/balance", nil)
@@ -322,14 +322,14 @@ func TestCreateCampaign(t *testing.T) {
 	}
 
 	// Check balance
-	balance, _ := svc.cache.Get(t.Context(), accountID+":balance")
+	balance, _ := svc.cache.Get(t.Context(), shared.AccountBalanceKey(accountID))
 	if balance != "1000" {
 		t.Errorf("expected balance 1000, got %s", balance)
 	}
 
 	// Check target throughput: 1000 / ((3600 / 600) / 10) -> 1000 / (6 / 10) -> 1000 / 0? No, my fix makes it 1.
 	// 3600 / 600 = 6. 6 / 10 = 0. So CountOfTenMins = 1. Throughput = 1000 / 1 = 1000.
-	th, _ := svc.cache.Get(t.Context(), accountID+":targetth")
+	th, _ := svc.cache.Get(t.Context(), shared.AccountTargetThroughputKey(accountID))
 	if th != "1000" {
 		t.Errorf("expected targetth 1000, got %s", th)
 	}

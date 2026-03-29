@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json/v2"
-	"fmt"
 	"testing"
 	"time"
 
@@ -52,14 +51,14 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 	}
 
 	now := time.Now().Unix()
-	if _, err := svc.cache.ZAdd(ctx, "delayed_jobs", redis.Z{
+	if _, err := svc.cache.ZAdd(ctx, shared.DelayedJobsKey, redis.Z{
 		Score:  float64(now - 1),
 		Member: string(jobBytes),
 	}).Result(); err != nil {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, fmt.Sprintf("%s:actualth", job.AccountID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, shared.AccountActualThroughputKey(job.AccountID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
@@ -71,7 +70,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 
 	deadline := time.After(3 * time.Second)
 	for {
-		val, err := svc.cache.Get(ctx, fmt.Sprintf("%s:actualth", job.AccountID))
+		val, err := svc.cache.Get(ctx, shared.AccountActualThroughputKey(job.AccountID))
 		if err == nil && val == "75" {
 			break
 		}
@@ -84,14 +83,14 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		}
 	}
 
-	exists, err := svc.cache.Exists(ctx, "delayed_jobs")
+	exists, err := svc.cache.Exists(ctx, shared.DelayedJobsKey)
 	if err != nil {
 		t.Fatalf("failed to check delayed_jobs existence: %v", err)
 	}
 	if exists {
 		// The key may still exist if other jobs are present, so verify the member is gone.
 		members, err := svc.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
-			Key:     "delayed_jobs",
+			Key:     shared.DelayedJobsKey,
 			Start:   "-inf",
 			Stop:    "+inf",
 			ByScore: true,
@@ -129,14 +128,14 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 	}
 
 	futureScore := float64(time.Now().Add(2 * time.Second).Unix())
-	if _, err := svc.cache.ZAdd(ctx, "delayed_jobs", redis.Z{
+	if _, err := svc.cache.ZAdd(ctx, shared.DelayedJobsKey, redis.Z{
 		Score:  futureScore,
 		Member: string(jobBytes),
 	}).Result(); err != nil {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, fmt.Sprintf("%s:actualth", job.AccountID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, shared.AccountActualThroughputKey(job.AccountID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
@@ -148,7 +147,7 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 
 	time.Sleep(1200 * time.Millisecond)
 
-	val, err := svc.cache.Get(ctx, fmt.Sprintf("%s:actualth", job.AccountID))
+	val, err := svc.cache.Get(ctx, shared.AccountActualThroughputKey(job.AccountID))
 	if err != nil {
 		t.Fatalf("failed to read actual throughput: %v", err)
 	}
