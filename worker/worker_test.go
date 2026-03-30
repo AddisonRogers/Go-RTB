@@ -51,10 +51,12 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 	}
 
 	now := time.Now().Unix()
-	if _, err := svc.cache.ZAdd(ctx, shared.DelayedJobsKey, redis.Z{
+	_, err = svc.cache.ZAdd(ctx, shared.DelayedJobsKey, redis.Z{
 		Score:  float64(now - 1),
 		Member: string(jobBytes),
-	}).Result(); err != nil {
+	}).Result()
+
+	if err != nil {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 

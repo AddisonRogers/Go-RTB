@@ -79,6 +79,7 @@ func (r *RedisAdapter) TTL(ctx context.Context, key string) (time.Duration, erro
 	return ttl, nil
 }
 
+// FindKeysByValue returns all keys that have the given value.
 func (r *RedisAdapter) FindKeysByValue(ctx context.Context, target string) ([]string, error) {
 	var (
 		cursor uint64
@@ -114,14 +115,17 @@ func (r *RedisAdapter) FindKeysByValue(ctx context.Context, target string) ([]st
 	return keys, nil
 }
 
+// ZRangeArgs returns a range of elements from a sorted set.
 func (r *RedisAdapter) ZRangeArgs(ctx context.Context, args redis.ZRangeArgs) ([]string, error) {
 	return r.client.ZRangeArgs(ctx, args).Result()
 }
 
+// ZRem removes one or more members from a sorted set.
 func (r *RedisAdapter) ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
 	return r.client.ZRem(ctx, key, members...)
 }
 
+// ZAdd adds one or more members to a sorted set, or updates its score if it already exists.
 func (r *RedisAdapter) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
 	return r.client.ZAdd(ctx, key, members...)
 }

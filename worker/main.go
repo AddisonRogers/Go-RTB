@@ -25,8 +25,8 @@ func NewWorkerService(c shared.Storer) *DependencyService {
 func main() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
+		Password: "",
+		DB:       0,
 	})
 	defer func(rdb *redis.Client) {
 		err := rdb.Close()

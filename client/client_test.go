@@ -129,8 +129,6 @@ func TestCreateCampaign(t *testing.T) {
 		t.Errorf("expected balance 1000, got %s", balance)
 	}
 
-	// Check target throughput: 1000 / ((3600 / 600) / 10) -> 1000 / (6 / 10) -> 1000 / 0? No, my fix makes it 1.
-	// 3600 / 600 = 6. 6 / 10 = 0. So CountOfTenMins = 1. Throughput = 1000 / 1 = 1000.
 	th, _ := svc.cache.Get(t.Context(), shared.AccountTargetThroughputKey(accountID))
 	if th != "1000" {
 		t.Errorf("expected targetth 1000, got %s", th)

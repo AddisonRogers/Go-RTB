@@ -26,8 +26,8 @@ func NewBankerService(c shared.Storer) *DependencyService {
 func main() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
+		Password: "",
+		DB:       0,
 	})
 	defer func(rdb *redis.Client) {
 		err := rdb.Close()
@@ -38,12 +38,10 @@ func main() {
 
 	redisAdapter := shared.NewRedisAdapter(rdb)
 
-	// Inject the adapter (which implements Cacher) into our service
 	svc := NewBankerService(redisAdapter)
 
 	mux := http.NewServeMux()
 
-	// Route Registrations
 	mux.HandleFunc("POST /accounts/{id}/authorize", svc.handleAuthorize)
 	mux.HandleFunc("POST /accounts/{id}/clear", svc.handleClear)
 	mux.HandleFunc("/health", healthCheck)
@@ -110,7 +108,6 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// generate authorize id
 	authorizeID := uuid.NewString()
 
 	err = s.cache.Set(r.Context(), shared.AccountHoldKey(id, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
