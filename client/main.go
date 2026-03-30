@@ -44,6 +44,7 @@ func main() {
 
 	// Route Registrations
 	mux.HandleFunc("/health", healthCheck)
+	mux.HandleFunc("POST /accounts/{id}", svc.handleTopUp)
 
 	log.Print("Listening on :3000...")
 	log.Fatal(http.ListenAndServe(":3000", mux))
@@ -61,10 +62,6 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (s *DependencyService) createAccount(w http.ResponseWriter, r *http.Request) {
 	// heavily linked with the whole auth / autho
-}
-
-func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Request) {
-
 }
 
 // POST /accounts/{id}/topup

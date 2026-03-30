@@ -86,3 +86,5 @@ func (s *DependencyService) handleBid(w http.ResponseWriter, r *http.Request) {
 		a no-bid / empty response
 	*/
 }
+
+// func prefilter (takes a request and adds tags and filters campagins?)
