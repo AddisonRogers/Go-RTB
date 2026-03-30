@@ -177,6 +177,38 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// 2. Create the Index (Only needs to be done once)
+	// We are indexing Hashes with the prefix "campaign:"
+	// We define "tags" as a TAG field so we can do exact matches
+	_, err := rdb.Do(ctx, "FT.CREATE", "idx:campaigns",
+		"ON", "HASH",
+		"PREFIX", "1", "campaign:",
+		"SCHEMA",
+		"name", "TEXT",
+		"tags", "TAG", // TAG type is optimized for CSV-like strings
+		"budget", "NUMERIC",
+	).Result()
+
+	if err != nil {
+		fmt.Println("Index might already exist:", err)
+	}
+
+	// 3. Create a Campaign (Store as a Hash)
+	campaignID := "101"
+	campaignKey := fmt.Sprintf("campaign:%s", campaignID)
+
+	err = rdb.HSet(ctx, campaignKey, map[string]interface{}{
+		"name":   "Summer Beauty Blast",
+		"tags":   "beauty,skincare,luxury", // Comma-separated for RediSearch TAGs
+		"budget": 5000,
+	}).Err()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Campaign created successfully!")
+
 }
 
 // this also includes topup actions

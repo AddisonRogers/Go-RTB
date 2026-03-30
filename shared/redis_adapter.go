@@ -129,3 +129,18 @@ func (r *RedisAdapter) ZRem(ctx context.Context, key string, members ...interfac
 func (r *RedisAdapter) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
 	return r.client.ZAdd(ctx, key, members...)
 }
+
+// Close closes the Redis client connection.
+func (r *RedisAdapter) Close() error {
+	return r.client.Close()
+}
+
+// TODO convert the response to something a bit more useful
+// FTSearch performs a full-text search on a Redis search index.
+func (r *RedisAdapter) FTSearch(ctx context.Context, index string, query string) ([]redis.Document, error) {
+	results, err := r.client.FTSearch(ctx, index, query).Result()
+	if err != nil {
+		return nil, err
+	}
+	return results.Docs, nil
+}

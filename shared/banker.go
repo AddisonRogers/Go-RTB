@@ -57,4 +57,6 @@ type Storer interface {
 	ZRangeArgs(ctx context.Context, args redis.ZRangeArgs) ([]string, error)
 	ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd
+	Close() error
+	FTSearch(ctx context.Context, index string, query string) ([]redis.Document, error)
 }
