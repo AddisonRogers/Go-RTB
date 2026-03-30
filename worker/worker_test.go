@@ -88,7 +88,6 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		t.Fatalf("failed to check delayed_jobs existence: %v", err)
 	}
 	if exists {
-		// The key may still exist if other jobs are present, so verify the member is gone.
 		members, err := svc.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
 			Key:     shared.DelayedJobsKey,
 			Start:   "-inf",

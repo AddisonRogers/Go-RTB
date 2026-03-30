@@ -58,9 +58,9 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 
 			jobs, err := s.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
 				Key:     shared.DelayedJobsKey,
-				Start:   "-inf", // Start from the oldest possible job
-				Stop:    now,    // Stop at "Right Now"
-				ByScore: true,   // Crucial: treat Start/Stop as scores, not ranks
+				Start:   "-inf",
+				Stop:    now,
+				ByScore: true,
 				Offset:  0,
 				Count:   10,
 			})
