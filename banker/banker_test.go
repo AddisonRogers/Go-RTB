@@ -40,9 +40,10 @@ func TestHandleAuthorize(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
-	actualTHKey := shared.CampaignActualThroughputKey(accountID)
-	targetTHKey := shared.CampaignTargetThroughputKey(accountID)
-	balanceKey := shared.CampaignBalanceKey(accountID)
+	campaignID := "camp-456"
+	actualTHKey := shared.CampaignActualThroughputKey(accountID, campaignID)
+	targetTHKey := shared.CampaignTargetThroughputKey(accountID, campaignID)
+	balanceKey := shared.CampaignBalanceKey(accountID, campaignID)
 
 	// Seed state so authorize can succeed.
 	_ = svc.cache.Set(t.Context(), actualTHKey, "10", 0)
@@ -68,7 +69,7 @@ func TestHandleAuthorize(t *testing.T) {
 		t.Fatal("expected non-empty authorize_id")
 	}
 
-	holdKey := shared.CampaignHoldKey(accountID, resp.AuthorizeID)
+	holdKey := shared.CampaignHoldKey(accountID, campaignID, resp.AuthorizeID)
 	holdAmount, err := svc.cache.Get(t.Context(), holdKey)
 	if err != nil {
 		t.Fatalf("expected hold key to exist: %v", err)
@@ -99,10 +100,11 @@ func TestHandleClear(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
+	campaignKey := "camp-456"
 	authID := "auth_456"
-	holdKey := shared.CampaignHoldKey(accountID, authID)
-	balanceKey := shared.CampaignBalanceKey(accountID)
-	actualTHKey := shared.CampaignActualThroughputKey(accountID)
+	holdKey := shared.CampaignHoldKey(accountID, campaignKey, authID)
+	balanceKey := shared.CampaignBalanceKey(accountID, campaignKey)
+	actualTHKey := shared.CampaignActualThroughputKey(accountID, campaignKey)
 
 	// Setup: initial hold and balance
 	_ = svc.cache.Set(t.Context(), holdKey, "100", 0)
@@ -139,13 +141,6 @@ func TestHandleClear(t *testing.T) {
 	if exists {
 		t.Error("expected hold to be deleted")
 	}
-
-	// Verify campaign key set
-	campaignKey := shared.AccountCampaignKey(accountID, authID)
-	val, _ = svc.cache.Get(t.Context(), campaignKey)
-	if val != "70" {
-		t.Errorf("expected campaign value 70, got %s", val)
-	}
 }
 
 func TestHandleClear_HoldTooLow(t *testing.T) {
@@ -153,10 +148,11 @@ func TestHandleClear_HoldTooLow(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
+	campaignKey := "camp-456"
 	authID := "auth_456"
-	holdKey := shared.CampaignHoldKey(accountID, authID)
-	balanceKey := shared.CampaignBalanceKey(accountID)
-	actualTHKey := shared.CampaignActualThroughputKey(accountID)
+	holdKey := shared.CampaignHoldKey(accountID, campaignKey, authID)
+	balanceKey := shared.CampaignBalanceKey(accountID, campaignKey)
+	actualTHKey := shared.CampaignActualThroughputKey(accountID, campaignKey)
 
 	_ = svc.cache.Set(t.Context(), holdKey, "50", 0)
 	_ = svc.cache.Set(t.Context(), balanceKey, "500", 0)
@@ -202,15 +198,5 @@ func TestHandleClear_HoldTooLow(t *testing.T) {
 	}
 	if actualTH != "10" {
 		t.Errorf("expected actual throughput 10, got %s", actualTH)
-	}
-
-	// Campaign key should not be created
-	campaignKey := shared.AccountCampaignKey(accountID, authID)
-	exists, err = svc.cache.Exists(t.Context(), campaignKey)
-	if err != nil {
-		t.Fatalf("expected exists check to succeed: %v", err)
-	}
-	if exists {
-		t.Error("expected campaign key to not be created")
 	}
 }

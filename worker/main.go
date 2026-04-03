@@ -41,10 +41,10 @@ func main() {
 
 	svc := NewWorkerService(redisAdapter)
 
-	svc.PollDelayedJobs(ctx)
+	svc.PollHistories(ctx)
 }
 
-func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
+func (s *DependencyService) PollHistories(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -57,7 +57,7 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 			now := time.Now().Unix()
 
 			jobs, err := s.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
-				Key:     shared.DelayedJobsKey,
+				Key:     shared.BadHistoryKey(),
 				Start:   "-inf",
 				Stop:    now,
 				ByScore: true,
@@ -70,16 +70,16 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 			}
 
 			for _, jobID := range jobs {
-				removed, _ := s.cache.ZRem(ctx, shared.DelayedJobsKey, jobID).Result()
+				removed, _ := s.cache.ZRem(ctx, shared.BadHistoryKey(), jobID).Result()
 				if removed > 0 {
-					job := &shared.Campaign{}
+					job := &shared.CampaignAdRecord{}
 					err := json.Unmarshal([]byte(jobID), job)
 					if err != nil {
 						fmt.Println("Error unmarshalling job", err)
 						continue
 					}
 
-					_, err = s.cache.DecrBy(ctx, shared.CampaignActualThroughputKey(job.AccountID), job.Amount)
+					_, err = s.cache.DecrBy(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID), job.Amount)
 					if err != nil {
 						fmt.Println("Error decreasing actual throughput", err)
 						continue

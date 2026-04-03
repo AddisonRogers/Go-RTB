@@ -58,12 +58,13 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// POST /accounts/{id}/authorize
+// POST /accounts/{accountKey}/campaigns/{campaignKey}/authorize
 func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	accountKey := r.PathValue("accountKey")
+	campaignKey := r.PathValue("campaignKey")
 
-	if id == "" {
-		http.Error(w, "Account ID cannot be empty", http.StatusBadRequest)
+	if accountKey == "" || campaignKey == "" {
+		http.Error(w, "Account ID and campaign ID cannot be empty", http.StatusBadRequest)
 		return
 	}
 
@@ -74,7 +75,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	actualth, err := s.cache.Get(r.Context(), shared.CampaignActualThroughputKey(id))
+	actualth, err := s.cache.Get(r.Context(), shared.CampaignActualThroughputKey(accountKey, campaignKey))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -86,7 +87,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	targetth, err := s.cache.Get(r.Context(), shared.CampaignTargetThroughputKey(id))
+	targetth, err := s.cache.Get(r.Context(), shared.CampaignTargetThroughputKey(accountKey, campaignKey))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -110,19 +111,19 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 
 	authorizeID := uuid.NewString()
 
-	err = s.cache.Set(r.Context(), shared.CampaignHoldKey(id, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
+	err = s.cache.Set(r.Context(), shared.CampaignHoldKey(accountKey, campaignKey, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(id), req.Amount)
+	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(accountKey, campaignKey), req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.DecrBy(r.Context(), shared.CampaignBalanceKey(id), req.Amount)
+	_, err = s.cache.DecrBy(r.Context(), shared.CampaignBalanceKey(accountKey, campaignKey), req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -148,10 +149,11 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 
 // POST /accounts/{id}/clear
 func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	accountKey := r.PathValue("accountKey")
+	campaignKey := r.PathValue("campaignKey")
 
-	if id == "" {
-		http.Error(w, "Account ID cannot be empty", http.StatusBadRequest)
+	if accountKey == "" || campaignKey == "" {
+		http.Error(w, "Account ID and campaign ID cannot be empty", http.StatusBadRequest)
 		return
 	}
 
@@ -163,7 +165,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// confirm that the hold is higher than
-	val, err := s.cache.Get(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
+	val, err := s.cache.Get(r.Context(), shared.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
 		return
 	}
@@ -180,17 +182,17 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 
 	// This *shouldnt* happen, but just in case
 	if holdAmount < req.FinalAmount {
+		// TODO make into transaction
 		http.Error(w, "Hold is not high enough", http.StatusBadRequest)
-		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(id), req.FinalAmount-holdAmount)
+		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(accountKey, campaignKey), holdAmount)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		err := s.cache.Delete(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
+		err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 
-		// TODO Big issue here, if the delete fails, we're in a bad state
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -199,49 +201,49 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO handle all erros by retrying the operation
 	remaining := holdAmount - req.FinalAmount
-	err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if remaining < 0 {
-		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(id), remaining)
+	if remaining > 0 {
+		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(accountKey, campaignKey), remaining)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 
-	err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	err = s.cache.Set(r.Context(), shared.AccountCampaignKey(id, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
+	//err = s.cache.Set(r.Context(), shared.AccountCampaignHistory(accountKey, campaignKey, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
+	//if err != nil {
+	//	http.Error(w, err.Error(), http.StatusInternalServerError)
+	//	return
+	//}
+
+	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(accountKey, campaignKey), req.FinalAmount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(id), req.FinalAmount)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	member, err := json.Marshal(shared.Campaign{
-		AccountID: id,
-		Amount:    req.FinalAmount,
+	member, err := json.Marshal(shared.CampaignAdRecord{
+		AccountID:  accountKey,
+		CampaignID: campaignKey,
+		Amount:     req.FinalAmount,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.ZAdd(r.Context(), shared.AccountCampaignsKey(id),
+	_, err = s.cache.ZAdd(r.Context(), shared.BadHistoryKey(),
 		redis.Z{
 			Score:  float64(time.Now().Add(10 * time.Minute).Unix()),
 			Member: member,

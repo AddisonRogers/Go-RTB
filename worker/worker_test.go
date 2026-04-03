@@ -40,9 +40,10 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	job := shared.Campaign{
-		AccountID: "acct-123",
-		Amount:    25,
+	job := shared.CampaignAdRecord{
+		AccountID:  "acct-123",
+		CampaignID: "camp-456",
+		Amount:     25,
 	}
 
 	jobBytes, err := json.Marshal(job)
@@ -51,7 +52,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 	}
 
 	now := time.Now().Unix()
-	_, err = svc.cache.ZAdd(ctx, shared.DelayedJobsKey, redis.Z{
+	_, err = svc.cache.ZAdd(ctx, shared.BadHistoryKey(), redis.Z{
 		Score:  float64(now - 1),
 		Member: string(jobBytes),
 	}).Result()
@@ -60,19 +61,19 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
 	done := make(chan struct{})
 	go func() {
-		svc.PollDelayedJobs(ctx)
+		svc.PollHistories(ctx)
 		close(done)
 	}()
 
 	deadline := time.After(3 * time.Second)
 	for {
-		val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID))
+		val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID))
 		if err == nil && val == "75" {
 			break
 		}
@@ -85,13 +86,13 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		}
 	}
 
-	exists, err := svc.cache.Exists(ctx, shared.DelayedJobsKey)
+	exists, err := svc.cache.Exists(ctx, shared.BadHistoryKey())
 	if err != nil {
 		t.Fatalf("failed to check delayed_jobs existence: %v", err)
 	}
 	if exists {
 		members, err := svc.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
-			Key:     shared.DelayedJobsKey,
+			Key:     shared.BadHistoryKey(),
 			Start:   "-inf",
 			Stop:    "+inf",
 			ByScore: true,
@@ -119,9 +120,10 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	job := shared.Campaign{
-		AccountID: "acct-456",
-		Amount:    10,
+	job := shared.CampaignAdRecord{
+		AccountID:  "acct-456",
+		CampaignID: "camp-123",
+		Amount:     10,
 	}
 	jobBytes, err := json.Marshal(job)
 	if err != nil {
@@ -129,26 +131,26 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 	}
 
 	futureScore := float64(time.Now().Add(2 * time.Second).Unix())
-	if _, err := svc.cache.ZAdd(ctx, shared.DelayedJobsKey, redis.Z{
+	if _, err := svc.cache.ZAdd(ctx, shared.BadHistoryKey(), redis.Z{
 		Score:  futureScore,
 		Member: string(jobBytes),
 	}).Result(); err != nil {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
 	done := make(chan struct{})
 	go func() {
-		svc.PollDelayedJobs(ctx)
+		svc.PollHistories(ctx)
 		close(done)
 	}()
 
 	time.Sleep(1200 * time.Millisecond)
 
-	val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID))
+	val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID))
 	if err != nil {
 		t.Fatalf("failed to read actual throughput: %v", err)
 	}

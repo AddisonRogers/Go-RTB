@@ -32,7 +32,8 @@ type CreateCampaign struct {
 	Tags   []string `json:"tags"`
 }
 
-type Campaign struct {
-	AccountID string `json:"account_id"`
-	Amount    int64  `json:"amount"`
+type CampaignAdRecord struct {
+	AccountID  string `json:"account_id"`
+	CampaignID string `json:"campaign_id"`
+	Amount     int64  `json:"amount"`
 }
