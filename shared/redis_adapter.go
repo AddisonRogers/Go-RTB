@@ -144,3 +144,44 @@ func (r *RedisAdapter) FTSearch(ctx context.Context, index string, query string)
 	}
 	return results.Docs, nil
 }
+
+func (r *RedisAdapter) Do(ctx context.Context, cmd string, args ...interface{}) (reply interface{}, err error) {
+	return r.client.Do(ctx, cmd, args).Result()
+}
+
+func (r *RedisAdapter) HSet(ctx context.Context, key string, value interface{}) (int64, error) {
+	return r.client.HSet(ctx, key, value).Result()
+}
+
+func (r *RedisAdapter) HGet(ctx context.Context, key string, field string) (string, error) {
+	return r.client.HGet(ctx, key, field).Result()
+}
+
+func (r *RedisAdapter) HGetAll(ctx context.Context, key string) (map[string]string, error) {
+	return r.client.HGetAll(ctx, key).Result()
+}
+
+func (r *RedisAdapter) FindAllHashes(ctx context.Context, partialKey string) ([]string, error) {
+	var (
+		cursor uint64
+		keys   []string
+	)
+
+	keys = make([]string, 0)
+
+	for {
+		batch, nextCursor, err := r.client.Scan(ctx, cursor, partialKey, 1000).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		keys = append(keys, batch...)
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return keys, nil
+}

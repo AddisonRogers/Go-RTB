@@ -40,9 +40,9 @@ func TestHandleAuthorize(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
-	actualTHKey := shared.AccountActualThroughputKey(accountID)
-	targetTHKey := shared.AccountTargetThroughputKey(accountID)
-	balanceKey := shared.AccountBalanceKey(accountID)
+	actualTHKey := shared.CampaignActualThroughputKey(accountID)
+	targetTHKey := shared.CampaignTargetThroughputKey(accountID)
+	balanceKey := shared.CampaignBalanceKey(accountID)
 
 	// Seed state so authorize can succeed.
 	_ = svc.cache.Set(t.Context(), actualTHKey, "10", 0)
@@ -68,7 +68,7 @@ func TestHandleAuthorize(t *testing.T) {
 		t.Fatal("expected non-empty authorize_id")
 	}
 
-	holdKey := shared.AccountHoldKey(accountID, resp.AuthorizeID)
+	holdKey := shared.CampaignHoldKey(accountID, resp.AuthorizeID)
 	holdAmount, err := svc.cache.Get(t.Context(), holdKey)
 	if err != nil {
 		t.Fatalf("expected hold key to exist: %v", err)
@@ -100,9 +100,9 @@ func TestHandleClear(t *testing.T) {
 
 	accountID := "123"
 	authID := "auth_456"
-	holdKey := shared.AccountHoldKey(accountID, authID)
-	balanceKey := shared.AccountBalanceKey(accountID)
-	actualTHKey := shared.AccountActualThroughputKey(accountID)
+	holdKey := shared.CampaignHoldKey(accountID, authID)
+	balanceKey := shared.CampaignBalanceKey(accountID)
+	actualTHKey := shared.CampaignActualThroughputKey(accountID)
 
 	// Setup: initial hold and balance
 	_ = svc.cache.Set(t.Context(), holdKey, "100", 0)
@@ -154,9 +154,9 @@ func TestHandleClear_HoldTooLow(t *testing.T) {
 
 	accountID := "123"
 	authID := "auth_456"
-	holdKey := shared.AccountHoldKey(accountID, authID)
-	balanceKey := shared.AccountBalanceKey(accountID)
-	actualTHKey := shared.AccountActualThroughputKey(accountID)
+	holdKey := shared.CampaignHoldKey(accountID, authID)
+	balanceKey := shared.CampaignBalanceKey(accountID)
+	actualTHKey := shared.CampaignActualThroughputKey(accountID)
 
 	_ = svc.cache.Set(t.Context(), holdKey, "50", 0)
 	_ = svc.cache.Set(t.Context(), balanceKey, "500", 0)

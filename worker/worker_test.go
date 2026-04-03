@@ -60,7 +60,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, shared.AccountActualThroughputKey(job.AccountID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
@@ -72,7 +72,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 
 	deadline := time.After(3 * time.Second)
 	for {
-		val, err := svc.cache.Get(ctx, shared.AccountActualThroughputKey(job.AccountID))
+		val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID))
 		if err == nil && val == "75" {
 			break
 		}
@@ -136,7 +136,7 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, shared.AccountActualThroughputKey(job.AccountID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 
 	time.Sleep(1200 * time.Millisecond)
 
-	val, err := svc.cache.Get(ctx, shared.AccountActualThroughputKey(job.AccountID))
+	val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID))
 	if err != nil {
 		t.Fatalf("failed to read actual throughput: %v", err)
 	}

@@ -79,7 +79,7 @@ func (s *DependencyService) PollDelayedJobs(ctx context.Context) {
 						continue
 					}
 
-					_, err = s.cache.DecrBy(ctx, shared.AccountActualThroughputKey(job.AccountID), job.Amount)
+					_, err = s.cache.DecrBy(ctx, shared.CampaignActualThroughputKey(job.AccountID), job.Amount)
 					if err != nil {
 						fmt.Println("Error decreasing actual throughput", err)
 						continue

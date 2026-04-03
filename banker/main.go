@@ -74,7 +74,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	actualth, err := s.cache.Get(r.Context(), shared.AccountActualThroughputKey(id))
+	actualth, err := s.cache.Get(r.Context(), shared.CampaignActualThroughputKey(id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -86,7 +86,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	targetth, err := s.cache.Get(r.Context(), shared.AccountTargetThroughputKey(id))
+	targetth, err := s.cache.Get(r.Context(), shared.CampaignTargetThroughputKey(id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -110,19 +110,19 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 
 	authorizeID := uuid.NewString()
 
-	err = s.cache.Set(r.Context(), shared.AccountHoldKey(id, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
+	err = s.cache.Set(r.Context(), shared.CampaignHoldKey(id, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), shared.AccountActualThroughputKey(id), req.Amount)
+	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(id), req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.DecrBy(r.Context(), shared.AccountBalanceKey(id), req.Amount)
+	_, err = s.cache.DecrBy(r.Context(), shared.CampaignBalanceKey(id), req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -163,7 +163,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// confirm that the hold is higher than
-	val, err := s.cache.Get(r.Context(), shared.AccountHoldKey(id, req.AuthorizeId))
+	val, err := s.cache.Get(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
 	if err != nil {
 		return
 	}
@@ -181,14 +181,14 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	// This *shouldnt* happen, but just in case
 	if holdAmount < req.FinalAmount {
 		http.Error(w, "Hold is not high enough", http.StatusBadRequest)
-		_, err = s.cache.IncrBy(r.Context(), shared.AccountBalanceKey(id), req.FinalAmount-holdAmount)
+		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(id), req.FinalAmount-holdAmount)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		err := s.cache.Delete(r.Context(), shared.AccountHoldKey(id, req.AuthorizeId))
+		err := s.cache.Delete(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
 
 		// TODO Big issue here, if the delete fails, we're in a bad state
 		if err != nil {
@@ -201,20 +201,20 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 
 	// TODO handle all erros by retrying the operation
 	remaining := holdAmount - req.FinalAmount
-	err = s.cache.Delete(r.Context(), shared.AccountHoldKey(id, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if remaining < 0 {
-		_, err = s.cache.IncrBy(r.Context(), shared.AccountBalanceKey(id), remaining)
+		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(id), remaining)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 
-	err = s.cache.Delete(r.Context(), shared.AccountHoldKey(id, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), shared.CampaignHoldKey(id, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -226,7 +226,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), shared.AccountActualThroughputKey(id), req.FinalAmount)
+	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(id), req.FinalAmount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

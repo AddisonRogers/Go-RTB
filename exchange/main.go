@@ -1,10 +1,12 @@
 package exchange
 
 import (
+	"context"
 	"encoding/json/v2"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
 	"github.com/bsm/openrtb/v3"
@@ -75,6 +77,24 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req == nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.AuctionType != 2 {
+		// We only support auction type 2
+		http.Error(w, "Invalid auction type", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := bidContext(r.Context(), time.Duration(req.TimeMax)*time.Millisecond)
+	defer cancel()
+
+	// TODO implement a crawl and tag system to validate their tags
+
+	req.Site.Categories
+	req.BlockedCategories
 	// TODO validate
 
 	// TODO enrich
@@ -84,7 +104,7 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	// Syntax: @tags:{tag_name}
 	query := "@tags:{beauty}"
 
-	res, err := s.cache.FTSearch(r.Context(), "idx:campaigns", query)
+	res, err := s.cache.FTSearch(ctx, "idx:campaigns", query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,4 +121,22 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Search Results: %v\n", res)
 	// auction
 
+}
+
+func bidContext(parent context.Context, tmax time.Duration) (context.Context, context.CancelFunc) {
+	deadline, present := parent.Deadline()
+	if present {
+		remaining := time.Until(deadline)
+		if remaining < tmax {
+			tmax = remaining
+		}
+	}
+
+	if tmax <= 0 {
+		ctx, cancel := context.WithCancel(parent)
+		cancel()
+		return ctx, cancel
+	}
+
+	return context.WithTimeout(parent, tmax)
 }

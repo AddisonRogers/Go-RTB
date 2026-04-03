@@ -6,30 +6,22 @@ const (
 	DelayedJobsKey = "delayed_jobs"
 )
 
-func AccountBalanceKey(id string) string {
-	return fmt.Sprintf("%s:balance", id)
+func CampaignBalanceKey(accountKey string, campaignKey string) string {
+	return fmt.Sprintf("%s:campaign:%s:balance", accountKey, campaignKey)
 }
 
-func AccountThroughputKey(id string) string {
-	return fmt.Sprintf("%s:throughput", id)
+func CampaignActualThroughputKey(accountKey string, campaignKey string) string {
+	return fmt.Sprintf("%s:campaign:%s:actualth", accountKey, campaignKey)
 }
 
-func AccountActualThroughputKey(id string) string {
-	return fmt.Sprintf("%s:actualth", id)
+func CampaignTargetThroughputKey(accountKey string, campaignKey string) string {
+	return fmt.Sprintf("%s:campaign:%s:targetth", accountKey, campaignKey)
 }
 
-func AccountTargetThroughputKey(id string) string {
-	return fmt.Sprintf("%s:targetth", id)
+func CampaignHoldKey(accountKey, campaignKey, authID string) string {
+	return fmt.Sprintf("%s:campaign:%s:hold:%s", accountKey, campaignKey, authID)
 }
 
-func AccountHoldKey(id, authID string) string {
-	return fmt.Sprintf("%s:hold:%s", id, authID)
-}
-
-func AccountCampaignKey(id, authID string) string {
-	return fmt.Sprintf("%s:campaign:%s", id, authID)
-}
-
-func AccountCampaignsKey(id string) string {
-	return fmt.Sprintf("%s:campaigns", id)
+func AccountCampaignKey(accountKey, campaignKey string) string {
+	return fmt.Sprintf("%s:campaign:%s", accountKey, campaignKey)
 }

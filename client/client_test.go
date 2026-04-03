@@ -58,7 +58,7 @@ func TestHandleTopUp(t *testing.T) {
 		t.Fatalf("unexpected body: got %q want %q", got, expectedBody)
 	}
 
-	gotBalance, err := svc.cache.Get(req.Context(), shared.AccountBalanceKey("123"))
+	gotBalance, err := svc.cache.Get(req.Context(), shared.CampaignBalanceKey("123"))
 	if err != nil {
 		t.Fatalf("expected redis value, got error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestHandleGetBalance(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
-	balanceKey := shared.AccountBalanceKey(accountID)
+	balanceKey := shared.CampaignBalanceKey(accountID)
 	_ = svc.cache.Set(t.Context(), balanceKey, "1234", 0)
 
 	req := httptest.NewRequest(http.MethodGet, "/accounts/123/balance", nil)
@@ -124,12 +124,12 @@ func TestCreateCampaign(t *testing.T) {
 	}
 
 	// Check balance
-	balance, _ := svc.cache.Get(t.Context(), shared.AccountBalanceKey(accountID))
+	balance, _ := svc.cache.Get(t.Context(), shared.CampaignBalanceKey(accountID))
 	if balance != "1000" {
 		t.Errorf("expected balance 1000, got %s", balance)
 	}
 
-	th, _ := svc.cache.Get(t.Context(), shared.AccountTargetThroughputKey(accountID))
+	th, _ := svc.cache.Get(t.Context(), shared.CampaignTargetThroughputKey(accountID))
 	if th != "1000" {
 		t.Errorf("expected targetth 1000, got %s", th)
 	}
