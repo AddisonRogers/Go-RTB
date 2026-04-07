@@ -44,6 +44,8 @@ func main() {
 	svc.PollHistories(ctx)
 }
 
+// TODO implement a crawl and tag system to validate their tags
+
 func (s *DependencyService) PollHistories(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()

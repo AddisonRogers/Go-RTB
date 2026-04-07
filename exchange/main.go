@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
@@ -91,36 +93,71 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := bidContext(r.Context(), time.Duration(req.TimeMax)*time.Millisecond)
 	defer cancel()
 
-	// TODO implement a crawl and tag system to validate their tags
-
-	req.Site.Categories
-	req.BlockedCategories
+	desiredTags := convertToString(req.Site.Categories)
+	blockedTags := convertToString(req.BlockedCategories)
 	// TODO validate
 
 	// TODO enrich
 
-	// fan-out
-
 	// Syntax: @tags:{tag_name}
-	query := "@tags:{beauty}"
+	query := fmt.Sprintf("@tags:{%s} -@tags:{%s}", desiredTags, blockedTags)
 
 	res, err := s.cache.FTSearch(ctx, "idx:campaigns", query)
 	if err != nil {
 		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	for _, item := range res {
-		go func(item redis.Document) {
-			// TODO fan-out
-			// send a request to the bidders
+	var wg sync.WaitGroup
+	results := make(chan string, len(res))
 
-			http.Get(fmt.Sprintf("/%s", item.ID))
+	// TODO something something loadbalancing across nodes and using that url
+
+	client := &http.Client{}
+
+	for _, item := range res {
+		wg.Add(1)
+
+		go func(item redis.Document) {
+			defer wg.Done()
+
+			// TODO fix and deserialize as I finish bibder
+			req, err := http.NewRequestWithContext(ctx, "GET", item.ID, nil)
+
+			if err != nil {
+				results <- fmt.Sprintf("Error [%s]: %v", item.ID, err)
+				return
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
+				results <- fmt.Sprintf("Error [%s]: %v", item.ID, err)
+				return
+			}
+
+			results <- fmt.Sprintf("Success [%s]: %s", item.ID, resp.Status)
+
+			defer resp.Body.Close()
 		}(item)
 	}
 
 	fmt.Printf("Search Results: %v\n", res)
 	// auction
 
+}
+
+func convertToString(categories []openrtb.ContentCategory) string {
+	if len(categories) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(categories))
+	for _, category := range categories {
+		parts = append(parts, string(category))
+	}
+
+	return strings.Join(parts, "|")
 }
 
 func bidContext(parent context.Context, tmax time.Duration) (context.Context, context.CancelFunc) {
