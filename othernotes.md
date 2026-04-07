@@ -8,3 +8,9 @@ I considered using a goroutine to handle things in the background but ultimately
 So I instead wanted to use a queue + a worker of some kind. The next question was how do I make it so that I dont have the worker polling 
 constantly the same db and having a poor scale up. So I looked up about redis and found keyspace notifications which solved a big part of this.
 BUT redis keyspace notifications are not reliable. So instead I opt for a sorted set which uses the timestamp as the score.
+
+# TODO but not really
+- [ ] Add auth and such to the client available api
+- [ ] Handle retries (from api to redis) and such in a graceful manner
+- [ ] Add a proper logger
+- [ ] Add more meaningful error messages
