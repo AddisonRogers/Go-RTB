@@ -178,7 +178,7 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	req := &shared.CreateCampaign{}
+	req := &shared.Campaign{}
 	err := json.UnmarshalRead(r.Body, req)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -227,19 +227,25 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 }
 
 // this also includes topup actions
-// TODO
-// POST /accounts/{accountKey}/campaigns/{id}
-func (s *DependencyService) updateCampaign(w http.ResponseWriter, r *http.Request) {
-	accountKey := r.PathValue("id")
-	campaignKey := r.PathValue("id")
-
-	if accountKey == "" || campaignKey == "" {
-		http.Error(w, "Account ID and Campaign ID cannot be empty", http.StatusBadRequest)
-		return
-	}
-
-	s.cache.HSet(r.Context(), shared.AccountCampaignKey(accountKey, campaignKey), preExistingCampaign)
-}
+//// TODO
+//// PATCH /accounts/{accountKey}/campaigns/{id}
+//func (s *DependencyService) updateCampaign(w http.ResponseWriter, r *http.Request) {
+//	accountKey := r.PathValue("id")
+//	campaignKey := r.PathValue("id")
+//
+//	if accountKey == "" || campaignKey == "" {
+//		http.Error(w, "Account ID and Campaign ID cannot be empty", http.StatusBadRequest)
+//		return
+//	}
+//
+//	req := &shared.Campaign{}
+//	err := json.UnmarshalRead(r.Body, req)
+//	if err != nil {
+//		http.Error(w, "Invalid request body", http.StatusBadRequest)
+//	}
+//
+//	s.cache.HSet(r.Context(), shared.AccountCampaignKey(accountKey, campaignKey), preExistingCampaign)
+//}
 
 // TODO
 // DELETE /accounts/{accountKey}/campaigns/{id}

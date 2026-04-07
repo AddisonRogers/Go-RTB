@@ -11,7 +11,9 @@ all have a /health
 
 - GET /campaigns
 - GET /campaigns/{id}
-- POST /campaigns/{id}
+- PATCH /campaigns/{id}
+  - This likely wont be implemented as it's unneeded for now but REST best practice afaik is to not have a /topup
+- POST /campaigns/{id}/topup
 - PUT /campaigns/{id}
 - DELETE /campaigns/{id}
 

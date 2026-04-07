@@ -25,7 +25,7 @@ type Balance struct {
 	Amount   int64  `json:"amount"`
 }
 
-type CreateCampaign struct {
+type Campaign struct {
 	Name   string   `json:"name"`
 	Amount int64    `json:"amount"`
 	Length int64    `json:"length"`
