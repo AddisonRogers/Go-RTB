@@ -42,8 +42,8 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("POST /accounts/{id}/authorize", svc.handleAuthorize)
-	mux.HandleFunc("POST /accounts/{id}/clear", svc.handleClear)
+	mux.HandleFunc("POST /accounts/{accountKey}/campaigns/{campaignKey}/authorize", svc.handleAuthorize)
+	mux.HandleFunc("POST /accounts/{accountKey}/campaigns/{campaignKey}/clear", svc.handleClear)
 	mux.HandleFunc("/health", healthCheck)
 
 	log.Print("Listening on :3000...")
@@ -147,7 +147,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// POST /accounts/{id}/clear
+// POST /accounts/{accountKey}/campaigns/{campaignKey}/clear
 func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) {
 	accountKey := r.PathValue("accountKey")
 	campaignKey := r.PathValue("campaignKey")
@@ -167,6 +167,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	// confirm that the hold is higher than
 	val, err := s.cache.Get(r.Context(), shared.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -212,6 +213,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		_, err = s.cache.IncrBy(r.Context(), shared.CampaignBalanceKey(accountKey, campaignKey), remaining)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -220,12 +222,6 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	//err = s.cache.Set(r.Context(), shared.AccountCampaignHistory(accountKey, campaignKey, req.AuthorizeId), strconv.FormatInt(req.FinalAmount, 10), 10*60)
-	//if err != nil {
-	//	http.Error(w, err.Error(), http.StatusInternalServerError)
-	//	return
-	//}
 
 	_, err = s.cache.IncrBy(r.Context(), shared.CampaignActualThroughputKey(accountKey, campaignKey), req.FinalAmount)
 	if err != nil {
