@@ -98,6 +98,7 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	// TODO validate
 
 	// TODO enrich
+	// TODO Check the user against the bidreq to see how valuable they are
 
 	// Syntax: @tags:{tag_name}
 	query := fmt.Sprintf("@tags:{%s} -@tags:{%s}", desiredTags, blockedTags)

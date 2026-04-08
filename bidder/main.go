@@ -40,7 +40,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthCheck)
-	mux.HandleFunc("POST /bid", svc.handleBid)
+	mux.HandleFunc("POST /bid}", svc.handleBid)
 
 	log.Print("Listening on :3000...")
 	log.Fatal(http.ListenAndServe(":3000", mux))
@@ -61,6 +61,24 @@ func (s *DependencyService) handleBid(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// TODO idk validate
+
+	campaignDetails, err := s.cache.HGetAll()
+	if err != nil {
+		http.Error(w, "Failed to retrieve campaign details", http.StatusInternalServerError)
+		return
+	}
+
+	// Check the site the bidreq comes from against the campaigns to see success rate
+	// maybe check the user to campaign?
+	// Check user details against campagin details ie
+	// TODO add points for number of matching tags of website to this campaign
+
+	// TODO campaign target age range
+	// TODO campaign target region
+	// TODO campaign target gender
+	// TODO campaign target income
 
 	/*
 		validates request fields
