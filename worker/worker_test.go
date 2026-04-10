@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
+	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 )
@@ -23,7 +24,7 @@ func newTestService(t *testing.T) (*DependencyService, *redis.Client, *miniredis
 		Addr: mr.Addr(),
 	})
 
-	svc := NewWorkerService(shared.NewRedisAdapter(rdb))
+	svc := NewWorkerService(redis2.NewRedisAdapter(rdb))
 
 	cleanup := func() {
 		_ = rdb.Close()
@@ -52,7 +53,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 	}
 
 	now := time.Now().Unix()
-	_, err = svc.cache.ZAdd(ctx, shared.BadHistoryKey(), redis.Z{
+	_, err = svc.cache.ZAdd(ctx, redis2.BadHistoryKey(), redis.Z{
 		Score:  float64(now - 1),
 		Member: string(jobBytes),
 	}).Result()
@@ -61,7 +62,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, redis2.CampaignActualThroughputKey(job.AccountID, job.CampaignID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
@@ -73,7 +74,7 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 
 	deadline := time.After(3 * time.Second)
 	for {
-		val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID))
+		val, err := svc.cache.Get(ctx, redis2.CampaignActualThroughputKey(job.AccountID, job.CampaignID))
 		if err == nil && val == "75" {
 			break
 		}
@@ -86,13 +87,13 @@ func TestPollDelayedJobsProcessesExpiredJob(t *testing.T) {
 		}
 	}
 
-	exists, err := svc.cache.Exists(ctx, shared.BadHistoryKey())
+	exists, err := svc.cache.Exists(ctx, redis2.BadHistoryKey())
 	if err != nil {
 		t.Fatalf("failed to check delayed_jobs existence: %v", err)
 	}
 	if exists {
 		members, err := svc.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
-			Key:     shared.BadHistoryKey(),
+			Key:     redis2.BadHistoryKey(),
 			Start:   "-inf",
 			Stop:    "+inf",
 			ByScore: true,
@@ -131,14 +132,14 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 	}
 
 	futureScore := float64(time.Now().Add(2 * time.Second).Unix())
-	if _, err := svc.cache.ZAdd(ctx, shared.BadHistoryKey(), redis.Z{
+	if _, err := svc.cache.ZAdd(ctx, redis2.BadHistoryKey(), redis.Z{
 		Score:  futureScore,
 		Member: string(jobBytes),
 	}).Result(); err != nil {
 		t.Fatalf("failed to seed delayed job: %v", err)
 	}
 
-	if err := svc.cache.Set(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID), "100", 0); err != nil {
+	if err := svc.cache.Set(ctx, redis2.CampaignActualThroughputKey(job.AccountID, job.CampaignID), "100", 0); err != nil {
 		t.Fatalf("failed to seed actual throughput: %v", err)
 	}
 
@@ -150,7 +151,7 @@ func TestPollDelayedJobsIgnoresFutureJob(t *testing.T) {
 
 	time.Sleep(1200 * time.Millisecond)
 
-	val, err := svc.cache.Get(ctx, shared.CampaignActualThroughputKey(job.AccountID, job.CampaignID))
+	val, err := svc.cache.Get(ctx, redis2.CampaignActualThroughputKey(job.AccountID, job.CampaignID))
 	if err != nil {
 		t.Fatalf("failed to read actual throughput: %v", err)
 	}

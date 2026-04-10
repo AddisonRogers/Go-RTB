@@ -7,14 +7,15 @@ import (
 	"net/http"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
+	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache shared.Storer
+	cache redis2.Storer
 }
 
-func NewBidderService(c shared.Storer) *DependencyService {
+func NewBidderService(c redis2.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -33,7 +34,7 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := shared.NewRedisAdapter(rdb)
+	redisAdapter := redis2.NewRedisAdapter(rdb)
 
 	svc := NewBidderService(redisAdapter)
 

@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
+	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache shared.Storer
+	cache redis2.Storer
 }
 
-func NewClientService(c shared.Storer) *DependencyService {
+func NewClientService(c redis2.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -37,7 +38,7 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := shared.NewRedisAdapter(rdb)
+	redisAdapter := redis2.NewRedisAdapter(rdb)
 
 	svc := NewClientService(redisAdapter)
 
@@ -101,7 +102,7 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 
 	// TODO any extra validation on the account or what have you
 
-	key := shared.CampaignBalanceKey(accountKey, campaignKey)
+	key := redis2.CampaignBalanceKey(accountKey, campaignKey)
 	newValue, err := s.cache.IncrBy(r.Context(), key, req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -133,7 +134,7 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 	}
 
 	Throughput := float64(newValue) / CountOfTenMins
-	err = s.cache.Set(r.Context(), shared.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(int64(Throughput), 10), 10*60)
+	err = s.cache.Set(r.Context(), redis2.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(int64(Throughput), 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -150,7 +151,7 @@ func (s *DependencyService) handleGetBalance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	balance, err := s.cache.Get(r.Context(), shared.CampaignBalanceKey(accountKey, campaignKey))
+	balance, err := s.cache.Get(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey))
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -187,7 +188,7 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	campaignKeyUUID, _ := uuid.NewUUID()
 	campaignKey := campaignKeyUUID.String()
 
-	accountCampaignKey := shared.AccountCampaignKey(accountKey, campaignKey)
+	accountCampaignKey := redis2.AccountCampaignKey(accountKey, campaignKey)
 	_, err = s.cache.HSet(r.Context(), accountCampaignKey, map[string]interface{}{
 		"name": req.Name,
 		"tags": req.Tags,
@@ -198,7 +199,7 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Managing the throughput
-	err = s.cache.Set(r.Context(), shared.CampaignBalanceKey(accountKey, campaignKey), strconv.FormatInt(req.Amount, 10), time.Duration(req.Length))
+	err = s.cache.Set(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey), strconv.FormatInt(req.Amount, 10), time.Duration(req.Length))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -210,13 +211,13 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 		CountOfTenMins = 1
 	}
 	Throughput := req.Amount / CountOfTenMins
-	err = s.cache.Set(r.Context(), shared.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
+	err = s.cache.Set(r.Context(), redis2.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	err = s.cache.Set(r.Context(), shared.CampaignActualThroughputKey(accountKey, campaignKey), strconv.FormatInt(0, 10), 10*60)
+	err = s.cache.Set(r.Context(), redis2.CampaignActualThroughputKey(accountKey, campaignKey), strconv.FormatInt(0, 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -307,7 +308,7 @@ func (s *DependencyService) getCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := s.cache.HGetAll(r.Context(), shared.AccountCampaignKey(accountKey, campaignKey))
+	campaign, err := s.cache.HGetAll(r.Context(), redis2.AccountCampaignKey(accountKey, campaignKey))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
