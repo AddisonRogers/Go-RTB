@@ -7,15 +7,15 @@ import (
 	"net/http"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
-	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache redis2.Storer
+	cache sharedRedis.Storer
 }
 
-func NewBidderService(c redis2.Storer) *DependencyService {
+func NewBidderService(c sharedRedis.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -34,14 +34,14 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := redis2.NewRedisAdapter(rdb)
+	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 
 	svc := NewBidderService(redisAdapter)
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthCheck)
-	mux.HandleFunc("POST /bid}", svc.handleBid)
+	mux.HandleFunc("POST /bid", svc.handleBid)
 
 	log.Print("Listening on :3000...")
 	log.Fatal(http.ListenAndServe(":3000", mux))
@@ -65,7 +65,7 @@ func (s *DependencyService) handleBid(w http.ResponseWriter, r *http.Request) {
 
 	// TODO idk validate
 
-	campaignDetails, err := s.cache.HGetAll()
+	campaignDetails, err := s.cache.HGetAll(r.Context(), sharedRedis.AccountCampaignKey(req.AccountId, req.CampaignId))
 	if err != nil {
 		http.Error(w, "Failed to retrieve campaign details", http.StatusInternalServerError)
 		return

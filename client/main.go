@@ -10,21 +10,27 @@ import (
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
-	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedVector "github.com/AddisonRogers/Go-RTB/shared/vector"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache redis2.Storer
+	cache  sharedRedis.Storer
+	tei    sharedVector.TEIClient
+	qdrant sharedVector.QdrantClient
 }
 
-func NewClientService(c redis2.Storer) *DependencyService {
+func NewClientService(c sharedRedis.Storer, tei sharedVector.TEIClient, qdrant sharedVector.QdrantClient) *DependencyService {
 	return &DependencyService{
-		cache: c,
+		cache:  c,
+		tei:    tei,
+		qdrant: qdrant,
 	}
 }
 
+// TODO move url to env
 func main() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -34,13 +40,15 @@ func main() {
 	defer func(rdb *redis.Client) {
 		err := rdb.Close()
 		if err != nil {
-			fmt.Println("Error closing redis client", err)
+			log.Printf("Error closing redis client: %v", err)
 		}
 	}(rdb)
 
-	redisAdapter := redis2.NewRedisAdapter(rdb)
+	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
+	teiClient := sharedVector.NewTEIClient("localhost:8080")
+	qdrantClient := sharedVector.NewQdrantClient("localhost:6333")
 
-	svc := NewClientService(redisAdapter)
+	svc := NewClientService(redisAdapter, *teiClient, *qdrantClient)
 
 	svc.setupIndex(context.Background())
 
@@ -102,7 +110,7 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 
 	// TODO any extra validation on the account or what have you
 
-	key := redis2.CampaignBalanceKey(accountKey, campaignKey)
+	key := sharedRedis.CampaignBalanceKey(accountKey, campaignKey)
 	newValue, err := s.cache.IncrBy(r.Context(), key, req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -134,7 +142,7 @@ func (s *DependencyService) handleTopUp(w http.ResponseWriter, r *http.Request) 
 	}
 
 	Throughput := float64(newValue) / CountOfTenMins
-	err = s.cache.Set(r.Context(), redis2.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(int64(Throughput), 10), 10*60)
+	err = s.cache.Set(r.Context(), sharedRedis.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(int64(Throughput), 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -151,7 +159,7 @@ func (s *DependencyService) handleGetBalance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	balance, err := s.cache.Get(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey))
+	balance, err := s.cache.Get(r.Context(), sharedRedis.CampaignBalanceKey(accountKey, campaignKey))
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -179,7 +187,7 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	req := &shared.Campaign{}
+	req := &shared.CampaignRequest{}
 	err := json.UnmarshalRead(r.Body, req)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -188,10 +196,15 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	campaignKeyUUID, _ := uuid.NewUUID()
 	campaignKey := campaignKeyUUID.String()
 
-	accountCampaignKey := redis2.AccountCampaignKey(accountKey, campaignKey)
+	// TODO make a request to url to download html
+
+	embedding, err := s.tei.GetEmbedding(r.Context(), req.Name+" "+req.Desc)
+
+	accountCampaignKey := sharedRedis.AccountCampaignKey(accountKey, campaignKey)
 	_, err = s.cache.HSet(r.Context(), accountCampaignKey, map[string]interface{}{
-		"name": req.Name,
-		"tags": req.Tags,
+		"name":      req.Name,
+		"tags":      req.Tags,
+		"embedding": embedding,
 	})
 
 	if err != nil {
@@ -199,7 +212,7 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Managing the throughput
-	err = s.cache.Set(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey), strconv.FormatInt(req.Amount, 10), time.Duration(req.Length))
+	err = s.cache.Set(r.Context(), sharedRedis.CampaignBalanceKey(accountKey, campaignKey), strconv.FormatInt(req.Amount, 10), time.Duration(req.Length))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -211,19 +224,26 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 		CountOfTenMins = 1
 	}
 	Throughput := req.Amount / CountOfTenMins
-	err = s.cache.Set(r.Context(), redis2.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
+	err = s.cache.Set(r.Context(), sharedRedis.CampaignTargetThroughputKey(accountKey, campaignKey), strconv.FormatInt(Throughput, 10), time.Duration(req.Length))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	err = s.cache.Set(r.Context(), redis2.CampaignActualThroughputKey(accountKey, campaignKey), strconv.FormatInt(0, 10), 10*60)
+	err = s.cache.Set(r.Context(), sharedRedis.CampaignActualThroughputKey(accountKey, campaignKey), strconv.FormatInt(0, 10), 10*60)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	fmt.Println("Campaign created successfully!")
+
+}
+
+// TODO add qdrant add vector embedding in campaign
+
+func (s *DependencyService) createWebsite(w http.ResponseWriter, r *http.Request) {
+	// This is to be used by the webiste partners to register their website with us
 
 }
 
@@ -308,7 +328,7 @@ func (s *DependencyService) getCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := s.cache.HGetAll(r.Context(), redis2.AccountCampaignKey(accountKey, campaignKey))
+	campaign, err := s.cache.HGetAll(r.Context(), sharedRedis.AccountCampaignKey(accountKey, campaignKey))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

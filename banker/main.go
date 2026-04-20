@@ -9,16 +9,16 @@ import (
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
-	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache redis2.Storer
+	cache sharedRedis.Storer
 }
 
-func NewBankerService(c redis2.Storer) *DependencyService {
+func NewBankerService(c sharedRedis.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -37,7 +37,7 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := redis2.NewRedisAdapter(rdb)
+	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 
 	svc := NewBankerService(redisAdapter)
 
@@ -76,7 +76,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	actualth, err := s.cache.Get(r.Context(), redis2.CampaignActualThroughputKey(accountKey, campaignKey))
+	actualth, err := s.cache.Get(r.Context(), sharedRedis.CampaignActualThroughputKey(accountKey, campaignKey))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -88,7 +88,7 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	targetth, err := s.cache.Get(r.Context(), redis2.CampaignTargetThroughputKey(accountKey, campaignKey))
+	targetth, err := s.cache.Get(r.Context(), sharedRedis.CampaignTargetThroughputKey(accountKey, campaignKey))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -112,19 +112,19 @@ func (s *DependencyService) handleAuthorize(w http.ResponseWriter, r *http.Reque
 
 	authorizeID := uuid.NewString()
 
-	err = s.cache.Set(r.Context(), redis2.CampaignHoldKey(accountKey, campaignKey, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
+	err = s.cache.Set(r.Context(), sharedRedis.CampaignHoldKey(accountKey, campaignKey, authorizeID), strconv.FormatInt(req.Amount, 10), 100)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), redis2.CampaignActualThroughputKey(accountKey, campaignKey), req.Amount)
+	_, err = s.cache.IncrBy(r.Context(), sharedRedis.CampaignActualThroughputKey(accountKey, campaignKey), req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.DecrBy(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey), req.Amount)
+	_, err = s.cache.DecrBy(r.Context(), sharedRedis.CampaignBalanceKey(accountKey, campaignKey), req.Amount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -166,7 +166,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// confirm that the hold is higher than
-	val, err := s.cache.Get(r.Context(), redis2.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
+	val, err := s.cache.Get(r.Context(), sharedRedis.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -186,14 +186,14 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	if holdAmount < req.FinalAmount {
 		// TODO make into transaction
 		http.Error(w, "Hold is not high enough", http.StatusBadRequest)
-		_, err = s.cache.IncrBy(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey), holdAmount)
+		_, err = s.cache.IncrBy(r.Context(), sharedRedis.CampaignBalanceKey(accountKey, campaignKey), holdAmount)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		err = s.cache.Delete(r.Context(), redis2.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
+		err = s.cache.Delete(r.Context(), sharedRedis.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -204,27 +204,27 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 	}
 
 	remaining := holdAmount - req.FinalAmount
-	err = s.cache.Delete(r.Context(), redis2.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), sharedRedis.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if remaining > 0 {
-		_, err = s.cache.IncrBy(r.Context(), redis2.CampaignBalanceKey(accountKey, campaignKey), remaining)
+		_, err = s.cache.IncrBy(r.Context(), sharedRedis.CampaignBalanceKey(accountKey, campaignKey), remaining)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 
-	err = s.cache.Delete(r.Context(), redis2.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
+	err = s.cache.Delete(r.Context(), sharedRedis.CampaignHoldKey(accountKey, campaignKey, req.AuthorizeId))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.cache.IncrBy(r.Context(), redis2.CampaignActualThroughputKey(accountKey, campaignKey), req.FinalAmount)
+	_, err = s.cache.IncrBy(r.Context(), sharedRedis.CampaignActualThroughputKey(accountKey, campaignKey), req.FinalAmount)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -240,7 +240,7 @@ func (s *DependencyService) handleClear(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, err = s.cache.ZAdd(r.Context(), redis2.BadHistoryKey(),
+	_, err = s.cache.ZAdd(r.Context(), sharedRedis.BadHistoryKey(),
 		redis.Z{
 			Score:  float64(time.Now().Add(10 * time.Minute).Unix()),
 			Member: member,

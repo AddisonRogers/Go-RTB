@@ -9,15 +9,15 @@ import (
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
-	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache redis2.Storer
+	cache sharedRedis.Storer
 }
 
-func NewWorkerService(c redis2.Storer) *DependencyService {
+func NewWorkerService(c sharedRedis.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -38,7 +38,7 @@ func main() {
 
 	ctx := context.Background()
 
-	redisAdapter := redis2.NewRedisAdapter(rdb)
+	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 
 	svc := NewWorkerService(redisAdapter)
 
@@ -60,7 +60,7 @@ func (s *DependencyService) PollHistories(ctx context.Context) {
 			now := time.Now().Unix()
 
 			jobs, err := s.cache.ZRangeArgs(ctx, redis.ZRangeArgs{
-				Key:     redis2.BadHistoryKey(),
+				Key:     sharedRedis.BadHistoryKey(),
 				Start:   "-inf",
 				Stop:    now,
 				ByScore: true,
@@ -73,7 +73,7 @@ func (s *DependencyService) PollHistories(ctx context.Context) {
 			}
 
 			for _, jobID := range jobs {
-				removed, _ := s.cache.ZRem(ctx, redis2.BadHistoryKey(), jobID).Result()
+				removed, _ := s.cache.ZRem(ctx, sharedRedis.BadHistoryKey(), jobID).Result()
 				if removed > 0 {
 					job := &shared.CampaignAdRecord{}
 					err := json.Unmarshal([]byte(jobID), job)
@@ -82,7 +82,7 @@ func (s *DependencyService) PollHistories(ctx context.Context) {
 						continue
 					}
 
-					_, err = s.cache.DecrBy(ctx, redis2.CampaignActualThroughputKey(job.AccountID, job.CampaignID), job.Amount)
+					_, err = s.cache.DecrBy(ctx, sharedRedis.CampaignActualThroughputKey(job.AccountID, job.CampaignID), job.Amount)
 					if err != nil {
 						fmt.Println("Error decreasing actual throughput", err)
 						continue

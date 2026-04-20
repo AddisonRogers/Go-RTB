@@ -10,16 +10,16 @@ import (
 	"sync"
 	"time"
 
-	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/bsm/openrtb/v3"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache redis2.Storer
+	cache sharedRedis.Storer
 }
 
-func NewExchangeService(c redis2.Storer) *DependencyService {
+func NewExchangeService(c sharedRedis.Storer) *DependencyService {
 	return &DependencyService{
 		cache: c,
 	}
@@ -38,7 +38,7 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := redis2.NewRedisAdapter(rdb)
+	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 
 	svc := NewExchangeService(redisAdapter)
 
