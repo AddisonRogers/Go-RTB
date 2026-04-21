@@ -31,6 +31,8 @@ func Open(path string) (*DB, error) {
 	return &DB{db}, nil
 }
 
+// TODO decide table structure
+
 // Migrate ensures the database schema is up to date.
 func (db *DB) Migrate() error {
 	const schema = `

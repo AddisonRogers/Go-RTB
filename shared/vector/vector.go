@@ -74,7 +74,34 @@ func (q *QdrantClient) AddWebsiteVectorToQdrant(url string, vector []float32) er
 	return err
 }
 
-func (q *QdrantClient) FindBestAdsForWebsite(websiteVector []float32) {
+func (q *QdrantClient) AddAdVectorToQdrant(accountKey, campaignKey string, vector []float32) error {
+	wait := true
+	id := websitePointID(fmt.Sprintf("%s:%s", accountKey, campaignKey))
+
+	_, err := q.client.Upsert(context.Background(), &qdrant.UpsertPoints{
+		CollectionName: "marketing_data",
+		Wait:           &(wait),
+		Points: []*qdrant.PointStruct{
+			{
+				Id: qdrant.NewIDNum(id),
+				Vectors: qdrant.NewVectorsMap(map[string]*qdrant.Vector{
+					"ad": qdrant.NewVector(vector...),
+				}),
+				Payload: qdrant.NewValueMap(map[string]any{
+					"accountKey":  accountKey,
+					"campaignKey": campaignKey,
+					"timestamp":   time.Now().Format(time.RFC3339),
+				}),
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (q *QdrantClient) FindBestAdsForWebsite(websiteVector []float32) ([]*qdrant.ScoredPoint, error) {
 	using := "ad"
 	limit := uint64(3)
 
@@ -89,11 +116,10 @@ func (q *QdrantClient) FindBestAdsForWebsite(websiteVector []float32) {
 		},
 		Limit: &limit,
 	})
+
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	for _, hit := range res {
-		fmt.Printf("Ad ID: %v, Similarity Score: %f\n", hit.Id, hit.Score)
-	}
+	return res, nil
 }

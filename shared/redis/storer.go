@@ -28,4 +28,5 @@ type Storer interface {
 	HGet(ctx context.Context, key string, field string) (string, error)
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	FindAllHashes(ctx context.Context, partialKey string) ([]string, error)
+	MGet(ctx context.Context, keys ...string) ([]interface{}, error)
 }

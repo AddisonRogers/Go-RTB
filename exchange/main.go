@@ -11,17 +11,20 @@ import (
 	"time"
 
 	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedVector "github.com/AddisonRogers/Go-RTB/shared/vector"
 	"github.com/bsm/openrtb/v3"
 	"github.com/redis/go-redis/v9"
 )
 
 type DependencyService struct {
-	cache sharedRedis.Storer
+	cache  sharedRedis.Storer
+	qdrant sharedVector.QdrantClient
 }
 
-func NewExchangeService(c sharedRedis.Storer) *DependencyService {
+func NewExchangeService(c sharedRedis.Storer, q sharedVector.QdrantClient) *DependencyService {
 	return &DependencyService{
-		cache: c,
+		cache:  c,
+		qdrant: q,
 	}
 }
 
@@ -39,8 +42,9 @@ func main() {
 	}(rdb)
 
 	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
+	qdrantClient := sharedVector.NewQdrantClient("localhost:6333")
 
-	svc := NewExchangeService(redisAdapter)
+	svc := NewExchangeService(redisAdapter, qdrantClient)
 
 	mux := http.NewServeMux()
 
@@ -93,19 +97,46 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := bidContext(r.Context(), time.Duration(req.TimeMax)*time.Millisecond)
 	defer cancel()
 
-	desiredTags := convertToString(req.Site.Categories)
-	blockedTags := convertToString(req.BlockedCategories)
-	// TODO validate
+	blockedTagsString := convertToString(req.BlockedCategories)
+	blockedTags := make(map[string]struct{})
+	for _, blocked := range strings.Split(blockedTagsString, "|") {
+		blocked = strings.TrimSpace(blocked)
+		if blocked == "" {
+			continue
+		}
+		blockedTags[blocked] = struct{}{}
+	}
 
 	// TODO enrich
 	// TODO Check the user against the bidreq to see how valuable they are
 
-	// Syntax: @tags:{tag_name}
-	query := fmt.Sprintf("@tags:{%s} -@tags:{%s}", desiredTags, blockedTags)
-
-	res, err := s.cache.FTSearch(ctx, "idx:campaigns", query)
+	embeddingStr, err := s.cache.Get(ctx, sharedRedis.WebsiteKey(req.Site.Domain))
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var embedding []float32
+	err = json.Unmarshal([]byte(embeddingStr), &embedding)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	candidates, err := s.qdrant.FindBestAdsForWebsite(embedding)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	candidateKeys := make([]string, len(candidates))
+	for i, item := range candidates {
+		accountCampaignKey := sharedRedis.AccountCampaignKey(item.Payload["accountkey"].(string), item.Payload["campaignkey"].(string))
+		candidateKeys[i] = accountCampaignKey
+	}
+
+	res, err := s.cache.MGet(ctx, candidateKeys...)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -122,6 +153,17 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 
 		go func(item redis.Document) {
 			defer wg.Done()
+
+			// filter here against blocked tags
+			tags, _ := item.Fields["tags"].(string)
+			if tags != "" {
+				for _, t := range strings.Split(tags, "|") {
+					_, found := blockedTags[strings.TrimSpace(t)]
+					if found {
+						return
+					}
+				}
+			}
 
 			// TODO fix and deserialize as I finish bibder
 			req, err := http.NewRequestWithContext(ctx, "GET", item.ID, nil)

@@ -191,14 +191,20 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	err := json.UnmarshalRead(r.Body, req)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
 	}
 
 	campaignKeyUUID, _ := uuid.NewUUID()
 	campaignKey := campaignKeyUUID.String()
 
 	// TODO make a request to url to download html
-
 	embedding, err := s.tei.GetEmbedding(r.Context(), req.Name+" "+req.Desc)
+
+	err = s.qdrant.AddAdVectorToQdrant(accountKey, campaignKey, embedding)
+	if err != nil {
+		http.Error(w, "Failed to add campaign to qdrant", http.StatusInternalServerError)
+		return
+	}
 
 	accountCampaignKey := sharedRedis.AccountCampaignKey(accountKey, campaignKey)
 	_, err = s.cache.HSet(r.Context(), accountCampaignKey, map[string]interface{}{
@@ -208,7 +214,8 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// Managing the throughput
@@ -238,13 +245,44 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 
 	fmt.Println("Campaign created successfully!")
 
+	// TODO return success
 }
 
-// TODO add qdrant add vector embedding in campaign
-
+// PUT /websites
 func (s *DependencyService) createWebsite(w http.ResponseWriter, r *http.Request) {
 	// This is to be used by the webiste partners to register their website with us
+	req := &shared.WebsiteRequest{}
+	err := json.UnmarshalRead(r.Body, req)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
+	embedding, err := s.tei.GetEmbedding(r.Context(), req.Name+" "+req.Desc)
+	if err != nil {
+		http.Error(w, "Failed to get embedding for website", http.StatusInternalServerError)
+		return
+	}
+
+	val, err := json.Marshal(embedding)
+	if err != nil {
+		http.Error(w, "Failed to marshal embedding", http.StatusInternalServerError)
+		return
+	}
+
+	err = s.cache.Set(r.Context(), sharedRedis.WebsiteKey(req.Url), string(val), -1)
+	if err != nil {
+		http.Error(w, "Failed to cache website embedding", http.StatusInternalServerError)
+		return
+	}
+
+	err = s.qdrant.AddWebsiteVectorToQdrant(req.Url, embedding)
+	if err != nil {
+		http.Error(w, "Failed to add website to qdrant", http.StatusInternalServerError)
+		return
+	}
+
+	// TODO return success
 }
 
 // this also includes topup actions

@@ -185,3 +185,7 @@ func (r *RedisAdapter) FindAllHashes(ctx context.Context, partialKey string) ([]
 
 	return keys, nil
 }
+
+func (r *RedisAdapter) MGet(ctx context.Context, keys ...string) ([]interface{}, error) {
+	return r.client.MGet(ctx, keys...).Result()
+}

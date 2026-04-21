@@ -33,3 +33,7 @@ func AccountCampaignKey(accountKey, campaignKey string) string {
 func BadHistoryKey() string {
 	return "historicalrecords"
 }
+
+func WebsiteKey(websiteKey string) string {
+	return fmt.Sprintf("website:%s", websiteKey)
+}

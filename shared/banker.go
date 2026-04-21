@@ -25,6 +25,13 @@ type Balance struct {
 	Amount   int64  `json:"amount"`
 }
 
+type WebsiteRequest struct {
+	Name string   `json:"name"`
+	Url  string   `json:"url"`
+	Desc string   `json:"desc"`
+	Tags []string `json:"tags"`
+}
+
 type CampaignRequest struct {
 	Name   string   `json:"name"`
 	Desc   string   `json:"desc"`
