@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	redis2 "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 )
@@ -23,7 +23,7 @@ func newTestService(t *testing.T) (*DependencyService, func()) {
 		Addr: mr.Addr(),
 	})
 
-	svc := NewClientService(redis2.NewRedisAdapter(rdb))
+	svc := NewClientService(sharedRedis.NewRedisAdapter(rdb))
 
 	cleanup := func() {
 		_ = rdb.Close()
@@ -58,7 +58,7 @@ func TestHandleTopUp(t *testing.T) {
 		t.Fatalf("unexpected body: got %q want %q", got, expectedBody)
 	}
 
-	gotBalance, err := svc.cache.Get(req.Context(), redis2.CampaignBalanceKey("123"))
+	gotBalance, err := svc.cache.Get(req.Context(), sharedRedis.CampaignBalanceKey("123"))
 	if err != nil {
 		t.Fatalf("expected redis value, got error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestHandleGetBalance(t *testing.T) {
 	defer cleanup()
 
 	accountID := "123"
-	balanceKey := redis2.CampaignBalanceKey(accountID)
+	balanceKey := sharedRedis.CampaignBalanceKey(accountID)
 	_ = svc.cache.Set(t.Context(), balanceKey, "1234", 0)
 
 	req := httptest.NewRequest(http.MethodGet, "/accounts/123/balance", nil)
@@ -124,12 +124,12 @@ func TestCreateCampaign(t *testing.T) {
 	}
 
 	// Check balance
-	balance, _ := svc.cache.Get(t.Context(), redis2.CampaignBalanceKey(accountID))
+	balance, _ := svc.cache.Get(t.Context(), sharedRedis.CampaignBalanceKey(accountID))
 	if balance != "1000" {
 		t.Errorf("expected balance 1000, got %s", balance)
 	}
 
-	th, _ := svc.cache.Get(t.Context(), redis2.CampaignTargetThroughputKey(accountID))
+	th, _ := svc.cache.Get(t.Context(), sharedRedis.CampaignTargetThroughputKey(accountID))
 	if th != "1000" {
 		t.Errorf("expected targetth 1000, got %s", th)
 	}
