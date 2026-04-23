@@ -3,6 +3,8 @@ package exchange
 import (
 	"context"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
@@ -47,7 +49,15 @@ func newTestService(t *testing.T) (*DependencyService, func()) {
 	qdrantClient := sharedVector.NewQdrantClient(qdrantEndpoint)
 	redisClient := sharedRedis.NewRedisAdapter(rdb)
 
-	svc := NewExchangeService(redisClient, *qdrantClient)
+	// TODO fix the return
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	httpClient := &http.Client{}
+	svc := NewExchangeService(redisClient, *qdrantClient, *httpClient, server.URL)
 
 	cleanup := func() {
 		if err := testcontainers.TerminateContainer(qdrantContainer); err != nil {

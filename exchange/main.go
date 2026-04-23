@@ -23,20 +23,24 @@ import (
 )
 
 type DependencyService struct {
-	cache  sharedRedis.Storer
-	qdrant sharedVector.QdrantClient
+	cache      sharedRedis.Storer
+	qdrant     sharedVector.QdrantClient
+	httpClient http.Client
+	bidderURL  string
 }
 
-func NewExchangeService(c sharedRedis.Storer, q sharedVector.QdrantClient) *DependencyService {
+func NewExchangeService(c sharedRedis.Storer, q sharedVector.QdrantClient, h http.Client, bidderURL string) *DependencyService {
 	return &DependencyService{
-		cache:  c,
-		qdrant: q,
+		cache:      c,
+		qdrant:     q,
+		httpClient: h,
+		bidderURL:  bidderURL,
 	}
 }
 
 func main() {
 	bidderEnv := os.Getenv("BIDDER_ENV")
-	_, err := url.ParseRequestURI(bidderEnv)
+	bidderURL, err := url.ParseRequestURI(bidderEnv)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("Invalid BIDDER_ENV: %v", err), http.StatusInternalServerError)
 		return
@@ -56,8 +60,9 @@ func main() {
 
 	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 	qdrantClient := sharedVector.NewQdrantClient("localhost:6333")
+	httpClient := http.Client{}
 
-	svc := NewExchangeService(redisAdapter, *qdrantClient)
+	svc := NewExchangeService(redisAdapter, *qdrantClient, httpClient, bidderURL.String())
 
 	mux := http.NewServeMux()
 
@@ -154,14 +159,6 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 
 	// TODO something something loadbalancing across nodes and using that url
 
-	// Get env
-	bidderEnv := os.Getenv("BIDDER_ENV")
-	bidderURL, err := url.ParseRequestURI(bidderEnv)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid BIDDER_ENV: %v", err), http.StatusInternalServerError)
-		return
-	}
-
 	requestId := uuid.New().String()
 
 	body := shared.BidRequest{
@@ -171,8 +168,6 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		User:           req.User,
 	}
 
-	client := &http.Client{}
-
 	for _, item := range candidates {
 		wg.Add(1)
 
@@ -180,7 +175,7 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 
 			// filter here against blocked tags
-			tags := item.Payload["tags"]
+			tags := item.Payload["tags"].String()
 			if tags != "" {
 				for _, t := range strings.Split(tags, "|") {
 					_, found := blockedTags[strings.TrimSpace(t)]
@@ -190,8 +185,8 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			body.AccountId = item.Payload["accountkey"].(string)
-			body.CampaignId = item.Payload["campaignkey"].(string)
+			body.AccountId = item.Payload["accountkey"].String()
+			body.CampaignId = item.Payload["campaignkey"].String()
 
 			bodyJson, err := json.Marshal(body)
 			if err != nil {
@@ -199,28 +194,18 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			req, err := http.NewRequestWithContext(
-				ctx,
-				http.MethodPost,
-				bidderURL.String()+"/bid",
+			resp, err := s.httpClient.Post(
+				s.bidderURL+"/bid",
+				fmt.Sprintf("application/json; charset=utf-8"),
 				bytes.NewReader(bodyJson),
 			)
 			if err != nil {
 				results <- fmt.Sprintf("Error [%s]: %v", item.Id, err)
 				return
 			}
-
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := client.Do(req)
-			if err != nil {
-				results <- fmt.Sprintf("Error [%s]: %v", item.Id, err)
-				return
-			}
+			defer resp.Body.Close()
 
 			results <- fmt.Sprintf("Success [%s]: %s", item.Id, resp.Status)
-
-			defer resp.Body.Close()
 		}(item)
 	}
 }
