@@ -200,23 +200,23 @@ func (s *DependencyService) createCampaign(w http.ResponseWriter, r *http.Reques
 	// TODO make a request to url to download html
 	embedding, err := s.tei.GetEmbedding(r.Context(), req.Name+" "+req.Desc)
 
-	err = s.qdrant.AddAdVectorToQdrant(accountKey, campaignKey, embedding)
+	err = s.qdrant.AddAdVectorToQdrant(accountKey, campaignKey, req.Tags, embedding)
 	if err != nil {
 		http.Error(w, "Failed to add campaign to qdrant", http.StatusInternalServerError)
 		return
 	}
 
-	accountCampaignKey := sharedRedis.AccountCampaignKey(accountKey, campaignKey)
-	_, err = s.cache.HSet(r.Context(), accountCampaignKey, map[string]interface{}{
-		"name":      req.Name,
-		"tags":      req.Tags,
-		"embedding": embedding,
-	})
+	//accountCampaignKey := sharedRedis.AccountCampaignKey(accountKey, campaignKey)
+	//_, err = s.cache.HSet(r.Context(), accountCampaignKey, map[string]interface{}{
+	//	"name":      req.Name,
+	//	"tags":      req.Tags,
+	//	"embedding": embedding,
+	//})
 
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	//if err != nil {
+	//	http.Error(w, err.Error(), http.StatusInternalServerError)
+	//	return
+	//}
 
 	// Managing the throughput
 	err = s.cache.Set(r.Context(), sharedRedis.CampaignBalanceKey(accountKey, campaignKey), strconv.FormatInt(req.Amount, 10), time.Duration(req.Length))

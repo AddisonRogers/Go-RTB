@@ -15,14 +15,6 @@ type BidRequest struct {
 	TagsOfInterest []string `json:"tags_of_interest"`
 	Site           string   `json:"site"`
 	User           User     `json:"user"`
-	Imp            []struct {
-		Id    string `json:"id"`
-		Image struct {
-			W int `json:"w"`
-			H int `json:"h"`
-		} `json:"image"`
-		Bidfloor float64 `json:"bidfloor"`
-	} `json:"imp"`
 }
 
 type BidResponse struct {

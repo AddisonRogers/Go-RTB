@@ -74,7 +74,7 @@ func (q *QdrantClient) AddWebsiteVectorToQdrant(url string, vector []float32) er
 	return err
 }
 
-func (q *QdrantClient) AddAdVectorToQdrant(accountKey, campaignKey string, vector []float32) error {
+func (q *QdrantClient) AddAdVectorToQdrant(accountKey, campaignKey string, tags []string, vector []float32) error {
 	wait := true
 	id := websitePointID(fmt.Sprintf("%s:%s", accountKey, campaignKey))
 
@@ -90,6 +90,7 @@ func (q *QdrantClient) AddAdVectorToQdrant(accountKey, campaignKey string, vecto
 				Payload: qdrant.NewValueMap(map[string]any{
 					"accountKey":  accountKey,
 					"campaignKey": campaignKey,
+					"tags":        tags,
 					"timestamp":   time.Now().Format(time.RFC3339),
 				}),
 			},

@@ -1,16 +1,21 @@
 package exchange
 
 import (
+	"context"
+	"log"
 	"testing"
 
 	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
+	sharedVector "github.com/AddisonRogers/Go-RTB/shared/vector"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/testcontainers/testcontainers-go"
 	qdrantTesting "github.com/testcontainers/testcontainers-go/modules/qdrant"
 )
 
 func newTestService(t *testing.T) (*DependencyService, func()) {
 	t.Helper()
+	ctx := context.Background()
 
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -21,17 +26,48 @@ func newTestService(t *testing.T) (*DependencyService, func()) {
 		Addr: mr.Addr(),
 	})
 
-	qdrant, err := qdrantTesting.Run()
+	qdrantContainer, err := qdrantTesting.Run(ctx, "qdrant/qdrant:latest")
 	if err != nil {
-		t.Fatalf("failed to start qdrant: %v", err)
+		log.Printf("failed to start container: %s", err)
+		return nil, nil
 	}
 
-	svc := NewExchangeService(sharedRedis.NewRedisAdapter(rdb))
+	_, err = qdrantContainer.State(ctx)
+	if err != nil {
+		log.Printf("failed to get container state: %s", err)
+		return nil, nil
+	}
+
+	qdrantEndpoint, err := qdrantContainer.RESTEndpoint(ctx)
+	if err != nil {
+		log.Printf("failed to get qdrant endpoint: %s", err)
+		return nil, nil
+	}
+
+	qdrantClient := sharedVector.NewQdrantClient(qdrantEndpoint)
+	redisClient := sharedRedis.NewRedisAdapter(rdb)
+
+	svc := NewExchangeService(redisClient, *qdrantClient)
 
 	cleanup := func() {
+		if err := testcontainers.TerminateContainer(qdrantContainer); err != nil {
+			log.Printf("failed to terminate container: %s", err)
+		}
 		_ = rdb.Close()
 		mr.Close()
 	}
 
 	return svc, cleanup
+}
+
+func DummyDataSetup(t *testing.T, svc *DependencyService) {
+
+}
+
+func Test(t *testing.T) {
+	svc, cleanup := newTestService(t)
+	defer cleanup()
+
+	DummyDataSetup(t, svc)
+
 }

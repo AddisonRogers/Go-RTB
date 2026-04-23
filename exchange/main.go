@@ -1,18 +1,24 @@
 package exchange
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/AddisonRogers/Go-RTB/shared"
 	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	sharedVector "github.com/AddisonRogers/Go-RTB/shared/vector"
 	"github.com/bsm/openrtb/v3"
+	"github.com/google/uuid"
+	"github.com/qdrant/go-client/qdrant"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,6 +35,13 @@ func NewExchangeService(c sharedRedis.Storer, q sharedVector.QdrantClient) *Depe
 }
 
 func main() {
+	bidderEnv := os.Getenv("BIDDER_ENV")
+	_, err := url.ParseRequestURI(bidderEnv)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Invalid BIDDER_ENV: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "",
@@ -44,7 +57,7 @@ func main() {
 	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 	qdrantClient := sharedVector.NewQdrantClient("localhost:6333")
 
-	svc := NewExchangeService(redisAdapter, qdrantClient)
+	svc := NewExchangeService(redisAdapter, *qdrantClient)
 
 	mux := http.NewServeMux()
 
@@ -76,7 +89,7 @@ Returns: A 200 OK with the winning Bid response or a 204 No Content if no one bi
 */
 
 func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
-	var req *openrtb.BidRequest
+	var req *shared.ExchangeRequest
 	err := json.UnmarshalRead(r.Body, &req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -88,18 +101,13 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.AuctionType != 2 {
-		// We only support auction type 2
-		http.Error(w, "Invalid auction type", http.StatusBadRequest)
-		return
-	}
-
 	ctx, cancel := bidContext(r.Context(), time.Duration(req.TimeMax)*time.Millisecond)
 	defer cancel()
 
-	blockedTagsString := convertToString(req.BlockedCategories)
+	// TODO Create the request in DB
+
 	blockedTags := make(map[string]struct{})
-	for _, blocked := range strings.Split(blockedTagsString, "|") {
+	for _, blocked := range req.BlockedTags {
 		blocked = strings.TrimSpace(blocked)
 		if blocked == "" {
 			continue
@@ -110,7 +118,7 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	// TODO enrich
 	// TODO Check the user against the bidreq to see how valuable they are
 
-	embeddingStr, err := s.cache.Get(ctx, sharedRedis.WebsiteKey(req.Site.Domain))
+	embeddingStr, err := s.cache.Get(ctx, sharedRedis.WebsiteKey(req.Site))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -129,33 +137,50 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	candidateKeys := make([]string, len(candidates))
-	for i, item := range candidates {
-		accountCampaignKey := sharedRedis.AccountCampaignKey(item.Payload["accountkey"].(string), item.Payload["campaignkey"].(string))
-		candidateKeys[i] = accountCampaignKey
-	}
+	//candidateKeys := make([]string, len(candidates))
+	//for i, item := range candidates {
+	//	accountCampaignKey := sharedRedis.AccountCampaignKey(item.Payload["accountkey"].(string), item.Payload["campaignkey"].(string))
+	//	candidateKeys[i] = accountCampaignKey
+	//}
 
-	res, err := s.cache.MGet(ctx, candidateKeys...)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	//res, err := s.cache.MGet(ctx, candidateKeys...)
+	//if err != nil {
+	//	http.Error(w, err.Error(), http.StatusInternalServerError)
+	//	return
+	//}
 
 	var wg sync.WaitGroup
-	results := make(chan string, len(res))
+	results := make(chan string, len(candidates))
 
 	// TODO something something loadbalancing across nodes and using that url
 
+	// Get env
+	bidderEnv := os.Getenv("BIDDER_ENV")
+	bidderURL, err := url.ParseRequestURI(bidderEnv)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid BIDDER_ENV: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	requestId := uuid.New().String()
+
+	body := shared.BidRequest{
+		RequestId:      requestId,
+		TagsOfInterest: req.Tags,
+		Site:           req.Site,
+		User:           req.User,
+	}
+
 	client := &http.Client{}
 
-	for _, item := range res {
+	for _, item := range candidates {
 		wg.Add(1)
 
-		go func(item redis.Document) {
+		go func(item *qdrant.ScoredPoint) {
 			defer wg.Done()
 
 			// filter here against blocked tags
-			tags, _ := item.Fields["tags"].(string)
+			tags := item.Payload["tags"]
 			if tags != "" {
 				for _, t := range strings.Split(tags, "|") {
 					_, found := blockedTags[strings.TrimSpace(t)]
@@ -165,29 +190,39 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// TODO fix and deserialize as I finish bibder
-			req, err := http.NewRequestWithContext(ctx, "GET", item.ID, nil)
+			body.AccountId = item.Payload["accountkey"].(string)
+			body.CampaignId = item.Payload["campaignkey"].(string)
 
+			bodyJson, err := json.Marshal(body)
 			if err != nil {
-				results <- fmt.Sprintf("Error [%s]: %v", item.ID, err)
+				results <- fmt.Sprintf("Error [%s]: %v", item.Id, err)
 				return
 			}
+
+			req, err := http.NewRequestWithContext(
+				ctx,
+				http.MethodPost,
+				bidderURL.String()+"/bid",
+				bytes.NewReader(bodyJson),
+			)
+			if err != nil {
+				results <- fmt.Sprintf("Error [%s]: %v", item.Id, err)
+				return
+			}
+
+			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := client.Do(req)
 			if err != nil {
-				results <- fmt.Sprintf("Error [%s]: %v", item.ID, err)
+				results <- fmt.Sprintf("Error [%s]: %v", item.Id, err)
 				return
 			}
 
-			results <- fmt.Sprintf("Success [%s]: %s", item.ID, resp.Status)
+			results <- fmt.Sprintf("Success [%s]: %s", item.Id, resp.Status)
 
 			defer resp.Body.Close()
 		}(item)
 	}
-
-	fmt.Printf("Search Results: %v\n", res)
-	// auction
-
 }
 
 func convertToString(categories []openrtb.ContentCategory) string {
