@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/qdrant/go-client/qdrant"
@@ -13,8 +16,18 @@ type QdrantClient struct {
 	client *qdrant.Client
 }
 
-func NewQdrantClient(url string) *QdrantClient {
-	config := &qdrant.Config{Host: url}
+func NewQdrantClient(url *url.URL) *QdrantClient {
+	port := strings.Split(url.String(), ":")[1]
+	portInt, err := strconv.ParseInt(port, 10, 32)
+	if err != nil {
+		panic(err)
+	}
+
+	config := &qdrant.Config{
+		Host:     url.Host,
+		Port:     int(portInt),
+		PoolSize: 1,
+	}
 
 	client, err := qdrant.NewClient(config)
 	if err != nil {
@@ -27,7 +40,7 @@ func NewQdrantClient(url string) *QdrantClient {
 
 func (q *QdrantClient) CreateWebsiteCollection() {
 	err := q.client.CreateCollection(context.Background(), &qdrant.CreateCollection{
-		CollectionName: "data",
+		CollectionName: "marketing_data",
 		VectorsConfig: qdrant.NewVectorsConfigMap(map[string]*qdrant.VectorParams{
 			"website": {
 				Size:     1024,
@@ -56,7 +69,7 @@ func (q *QdrantClient) AddWebsiteVectorToQdrant(url string, vector []float32) er
 	id := websitePointID(url)
 
 	_, err := q.client.Upsert(context.Background(), &qdrant.UpsertPoints{
-		CollectionName: "data",
+		CollectionName: "marketing_data",
 		Wait:           &(wait),
 		Points: []*qdrant.PointStruct{
 			{
@@ -90,7 +103,8 @@ func (q *QdrantClient) AddAdVectorToQdrant(accountKey, campaignKey string, tags 
 				Payload: qdrant.NewValueMap(map[string]any{
 					"accountKey":  accountKey,
 					"campaignKey": campaignKey,
-					"tags":        tags,
+					"tags":        strings.Join(tags, "|"),
+					"type":        "ad",
 					"timestamp":   time.Now().Format(time.RFC3339),
 				}),
 			},

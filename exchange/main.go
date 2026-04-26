@@ -16,7 +16,6 @@ import (
 	"github.com/AddisonRogers/Go-RTB/shared"
 	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	sharedVector "github.com/AddisonRogers/Go-RTB/shared/vector"
-	"github.com/bsm/openrtb/v3"
 	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
 	"github.com/redis/go-redis/v9"
@@ -59,7 +58,14 @@ func main() {
 	}(rdb)
 
 	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
-	qdrantClient := sharedVector.NewQdrantClient("localhost:6333")
+
+	requestURI, err := url.ParseRequestURI("http://localhost:6333")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Invalid URL: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	qdrantClient := sharedVector.NewQdrantClient(requestURI)
 	httpClient := http.Client{}
 
 	svc := NewExchangeService(redisAdapter, *qdrantClient, httpClient, bidderURL.String())
@@ -81,18 +87,6 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-/*
-Validates the request.
-
-Enriches data (e.g., looks up User ID in a mock KV store).
-
-The Fan-Out: Concurrently calls multiple Bidders via Protobuf or JSON.
-
-The Auction: Aggregates responses, picks the highest bid_price, and handles "No Bids."
-
-Returns: A 200 OK with the winning Bid response or a 204 No Content if no one bid high enough.
-*/
-
 func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	var req *shared.ExchangeRequest
 	err := json.UnmarshalRead(r.Body, &req)
@@ -109,7 +103,8 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := bidContext(r.Context(), time.Duration(req.TimeMax)*time.Millisecond)
 	defer cancel()
 
-	// TODO Create the request in DB
+	// TODO DB integration to have a quick return if available
+	// TODO enrich with data from cookies
 
 	blockedTags := make(map[string]struct{})
 	for _, blocked := range req.BlockedTags {
@@ -120,9 +115,9 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		blockedTags[blocked] = struct{}{}
 	}
 
-	// TODO enrich
-	// TODO Check the user against the bidreq to see how valuable they are
-
+	// TODO this doesnt check that the website is already embedded
+	// ^ if it is not embedded then it should reject the request as it needs to call client first
+	// ^^ could also make it so that the request payload requires the embedding
 	embeddingStr, err := s.cache.Get(ctx, sharedRedis.WebsiteKey(req.Site))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -142,26 +137,12 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//candidateKeys := make([]string, len(candidates))
-	//for i, item := range candidates {
-	//	accountCampaignKey := sharedRedis.AccountCampaignKey(item.Payload["accountkey"].(string), item.Payload["campaignkey"].(string))
-	//	candidateKeys[i] = accountCampaignKey
-	//}
-
-	//res, err := s.cache.MGet(ctx, candidateKeys...)
-	//if err != nil {
-	//	http.Error(w, err.Error(), http.StatusInternalServerError)
-	//	return
-	//}
-
 	var wg sync.WaitGroup
 	results := make(chan string, len(candidates))
 
-	// TODO something something loadbalancing across nodes and using that url
-
 	requestId := uuid.New().String()
 
-	body := shared.BidRequest{
+	baseBody := shared.BidRequest{
 		RequestId:      requestId,
 		TagsOfInterest: req.Tags,
 		Site:           req.Site,
@@ -185,8 +166,9 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			body.AccountId = item.Payload["accountkey"].String()
-			body.CampaignId = item.Payload["campaignkey"].String()
+			body := baseBody
+			body.AccountId = item.Payload["accountKey"].String()
+			body.CampaignId = item.Payload["campaignKey"].String()
 
 			bodyJson, err := json.Marshal(body)
 			if err != nil {
@@ -199,6 +181,7 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("application/json; charset=utf-8"),
 				bytes.NewReader(bodyJson),
 			)
+
 			if err != nil {
 				results <- fmt.Sprintf("Error [%s]: %v", item.Id, err)
 				return
@@ -208,21 +191,23 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 			results <- fmt.Sprintf("Success [%s]: %s", item.Id, resp.Status)
 		}(item)
 	}
-}
 
-func convertToString(categories []openrtb.ContentCategory) string {
-	if len(categories) == 0 {
-		return ""
+	wg.Wait()
+	close(results)
+
+	out := make([]string, 0, len(results))
+	for result := range results {
+		out = append(out, result)
 	}
 
-	parts := make([]string, 0, len(categories))
-	for _, category := range categories {
-		parts = append(parts, string(category))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.MarshalWrite(w, out); err != nil {
+		log.Printf("failed to write exchange response: %v", err)
 	}
-
-	return strings.Join(parts, "|")
 }
 
+// This creates/shortens a context with a timeout
 func bidContext(parent context.Context, tmax time.Duration) (context.Context, context.CancelFunc) {
 	deadline, present := parent.Deadline()
 	if present {

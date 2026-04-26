@@ -65,11 +65,13 @@ func (s *DependencyService) handleBid(w http.ResponseWriter, r *http.Request) {
 
 	// TODO idk validate
 
-	campaignDetails, err := s.cache.HGetAll(r.Context(), sharedRedis.AccountCampaignKey(req.AccountId, req.CampaignId))
-	if err != nil {
-		http.Error(w, "Failed to retrieve campaign details", http.StatusInternalServerError)
-		return
-	}
+	// TODO decide all the features to go into linear/logistic regression model
+
+	//campaignDetails, err := s.cache.HGetAll(r.Context(), sharedRedis.AccountCampaignKey(req.AccountId, req.CampaignId))
+	//if err != nil {
+	//	http.Error(w, "Failed to retrieve campaign details", http.StatusInternalServerError)
+	//	return
+	//}
 
 	// Check the site the bidreq comes from against the campaigns to see success rate
 	// maybe check the user to campaign?
