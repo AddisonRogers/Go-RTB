@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,10 +69,10 @@ var (
 	)
 )
 
-func NewExchangeService(c sharedRedis.Storer, q sharedVector.QdrantClient, h http.Client, bidderURL string) *DependencyService {
+func NewExchangeService(c sharedRedis.Storer, q qdrant.Client, h http.Client, bidderURL string) *DependencyService {
 	return &DependencyService{
 		cache:      c,
-		qdrant:     q,
+		qdrant:     *sharedVector.NewQdrantClient(&q), // TODO this is a temporary workaround
 		httpClient: h,
 		bidderURL:  bidderURL,
 	}
@@ -101,9 +102,29 @@ func main() {
 		return
 	}
 
+	redisURLEnv := os.Getenv("REDIS_URL")
+	redisURL, err := url.ParseRequestURI(redisURLEnv)
+	if err != nil {
+		logger.ErrorContext(ctx, "invalid REDIS_URL", slog.Any("error", err), slog.String("value", redisURLEnv))
+		return
+	}
+
+	redisPasswordEnv := os.Getenv("REDIS_PASSWORD")
+	if redisPasswordEnv == "" {
+		logger.ErrorContext(ctx, "REDIS_PASSWORD is empty", slog.String("value", redisPasswordEnv))
+		return
+	}
+
+	qdrantURLEnv := os.Getenv("QDRANT_URL")
+	qdrantURL, err := url.ParseRequestURI(qdrantURLEnv)
+	if err != nil {
+		logger.ErrorContext(ctx, "invalid QDRANT_URL", slog.Any("error", err), slog.String("value", qdrantURLEnv))
+		return
+	}
+
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
+		Addr:     redisURL.Host,
+		Password: redisPasswordEnv,
 		DB:       0,
 	})
 	defer func(rdb *redis.Client) {
@@ -113,15 +134,26 @@ func main() {
 		}
 	}(rdb)
 
-	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
-
-	requestURI, err := url.ParseRequestURI("http://localhost:6333")
+	port := strings.Split(qdrantURL.String(), ":")[1]
+	portInt, err := strconv.ParseInt(port, 10, 32)
 	if err != nil {
-		logger.ErrorContext(ctx, "failed to find environment variable BIDDER_ENV", slog.Any("error", err))
+		logger.ErrorContext(ctx, "failed to parse qdrant port", slog.Any("error", err))
 		return
 	}
 
-	qdrantClient := sharedVector.NewQdrantClient(requestURI)
+	config := &qdrant.Config{
+		Host:     qdrantURL.Host,
+		Port:     int(portInt),
+		PoolSize: 1,
+	}
+
+	qdrantClient, err := qdrant.NewClient(config)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to start qdrant client", slog.Any("error", err))
+		return
+	}
+
+	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
 	httpClient := http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
