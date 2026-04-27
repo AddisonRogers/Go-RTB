@@ -2,6 +2,16 @@
 
 A Go-based real-time bidding (RTB) system. This is a work in progress.
 
+## Architecture
+The short and the rough is that we have the 
+- 'Client' that acts as the point of interface for creating campaigns, accounts, websites topping up etc.
+- The 'Banker' is the service that handles the approval / limiter of the bid requests.
+- The 'Exchange' is the service that handles the exchange of the bid requests. 
+It takes a bid request, looks up the website and ads that are closest to the website in similarity, 
+then sends a value request to a bidder with each of the top n ads.
+- (currently working on this) The 'Bidder' is the service that handles the bid requests. It takes a value request and sends it *somehow* to a regression model with all the info as features to predict a value of the request.
+- The 'Worker' is a background service that handles a few different things. For one it handles the banker's rate limiting (refer to [this technical challenge](#throughput-computation-on-expiry) for more info).
+
 ## Routes
 
 All services have a /health route that returns a 200 if the service is up.
