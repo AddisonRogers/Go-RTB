@@ -251,8 +251,15 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		slog.String("blocked_tags", strings.Join(req.BlockedTags, ",")),
 	)
 
-	// TODO DB integration to have a quick return if available
-	// TODO enrich with data from cookies
+	ctx, redisSpan := tracer.Start(ctx, "redis.get_website_embedding")
+	embeddingStr, err := s.cache.Get(ctx, sharedRedis.WebsiteKey(req.Site))
+	if err != nil {
+		redisSpan.RecordError(err)
+		redisSpan.End()
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	redisSpan.End()
 
 	blockedTags := make(map[string]struct{})
 	for _, blocked := range req.BlockedTags {
@@ -262,19 +269,6 @@ func (s *DependencyService) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		blockedTags[blocked] = struct{}{}
 	}
-
-	// TODO this doesnt check that the website is already embedded
-	// ^ if it is not embedded then it should reject the request as it needs to call client first
-	// ^^ could also make it so that the request payload requires the embedding
-	ctx, redisSpan := tracer.Start(ctx, "redis.get_website_embedding")
-	embeddingStr, err := s.cache.Get(ctx, sharedRedis.WebsiteKey(req.Site))
-	if err != nil {
-		redisSpan.RecordError(err)
-		redisSpan.End()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	redisSpan.End()
 
 	if embeddingStr == "" {
 		bidRequestServerErrors.Add(ctx, 1, metric.WithAttributes(
