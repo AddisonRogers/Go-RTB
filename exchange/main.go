@@ -83,7 +83,7 @@ func main() {
 	defer stop()
 
 	otelShutdown, err := shared.SetupOTelSDK(ctx, shared.OTelConfig{
-		ServiceName: "exchange",
+		ServiceName: name,
 	})
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to set up OpenTelemetry", slog.Any("error", err))
