@@ -4,16 +4,23 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AddisonRogers/Go-RTB/shared"
 	sharedRedis "github.com/AddisonRogers/Go-RTB/shared/redis"
 	sharedVector "github.com/AddisonRogers/Go-RTB/shared/vector"
 	"github.com/google/uuid"
+	"github.com/qdrant/go-client/qdrant"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 )
 
 type DependencyService struct {
@@ -22,31 +29,108 @@ type DependencyService struct {
 	qdrant sharedVector.QdrantClient
 }
 
-func NewClientService(c sharedRedis.Storer, tei sharedVector.TEIClient, qdrant sharedVector.QdrantClient) *DependencyService {
+const name = "client"
+
+var (
+	tracer = otel.Tracer(name)
+	meter  = otel.Meter(name)
+	logger = otelslog.NewLogger(name)
+
+	bidderErrors, _ = meter.Int64Counter(
+		"exchange.bidder.errors",
+	)
+
+	bidderRequestDuration, _ = meter.Float64Histogram(
+		"exchange.bidder_request_duration_ms",
+	)
+)
+
+func NewClientService(c sharedRedis.Storer, tei sharedVector.TEIClient, qdrant qdrant.Client) *DependencyService {
 	return &DependencyService{
 		cache:  c,
 		tei:    tei,
-		qdrant: qdrant,
+		qdrant: *sharedVector.NewQdrantClient(&qdrant), // TODO this is a temporary workaround
 	}
 }
 
 // TODO move url to env
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	otelShutdown, err := shared.SetupOTelSDK(ctx, shared.OTelConfig{
+		ServiceName: name,
+	})
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to set up OpenTelemetry", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer func() {
+		if shutdownErr := otelShutdown(context.Background()); shutdownErr != nil {
+			logger.ErrorContext(context.Background(), "failed to shut down OpenTelemetry", slog.Any("error", shutdownErr))
+		}
+	}()
+
+	redisURLEnv := os.Getenv("REDIS_URL")
+	redisURL, err := url.ParseRequestURI(redisURLEnv)
+	if err != nil {
+		logger.ErrorContext(ctx, "invalid REDIS_URL", slog.Any("error", err), slog.String("value", redisURLEnv))
+		return
+	}
+
+	redisPasswordEnv := os.Getenv("REDIS_PASSWORD")
+	if redisPasswordEnv == "" {
+		logger.ErrorContext(ctx, "REDIS_PASSWORD is empty", slog.String("value", redisPasswordEnv))
+		return
+	}
+
+	qdrantURLEnv := os.Getenv("QDRANT_URL")
+	qdrantURL, err := url.ParseRequestURI(qdrantURLEnv)
+	if err != nil {
+		logger.ErrorContext(ctx, "invalid QDRANT_URL", slog.Any("error", err), slog.String("value", qdrantURLEnv))
+		return
+	}
+
+	teiURLEnv := os.Getenv("TEI_URL")
+	teiURL, err := url.ParseRequestURI(teiURLEnv)
+	if err != nil {
+		logger.ErrorContext(ctx, "invalid TEI_URL", slog.Any("error", err), slog.String("value", teiURLEnv))
+		return
+	}
+
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
+		Addr:     redisURL.Host,
+		Password: redisPasswordEnv,
 		DB:       0,
 	})
 	defer func(rdb *redis.Client) {
 		err := rdb.Close()
 		if err != nil {
-			log.Printf("Error closing redis client: %v", err)
+			logger.ErrorContext(ctx, "error closing redis client", slog.Any("error", err))
 		}
 	}(rdb)
 
+	port := strings.Split(qdrantURL.String(), ":")[1]
+	portInt, err := strconv.ParseInt(port, 10, 32)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to parse qdrant port", slog.Any("error", err))
+		return
+	}
+
+	config := &qdrant.Config{
+		Host:     qdrantURL.Host,
+		Port:     int(portInt),
+		PoolSize: 1,
+	}
+
+	qdrantClient, err := qdrant.NewClient(config)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to start qdrant client", slog.Any("error", err))
+		return
+	}
+
 	redisAdapter := sharedRedis.NewRedisAdapter(rdb)
-	teiClient := sharedVector.NewTEIClient("localhost:8080")
-	qdrantClient := sharedVector.NewQdrantClient("localhost:6333")
+	teiClient := sharedVector.NewTEIClient(teiURL.String())
 
 	svc := NewClientService(redisAdapter, *teiClient, *qdrantClient)
 
@@ -57,8 +141,11 @@ func main() {
 	mux.HandleFunc("/health", healthCheck)
 	mux.HandleFunc("POST /campaigns/{id}/topup", svc.handleTopUp)
 
-	log.Print("Listening on :3000...")
-	log.Fatal(http.ListenAndServe(":3000", mux))
+	logger.InfoContext(ctx, "starting server", slog.String("address", ":3000"))
+	err = http.ListenAndServe(":3000", mux)
+	if err != nil {
+		return
+	}
 }
 
 // TODO auth + autho
@@ -74,7 +161,7 @@ func (s *DependencyService) setupIndex(ctx context.Context) {
 	)
 
 	if err != nil {
-		fmt.Println("Index might already exist:", err)
+		logger.ErrorContext(ctx, "error creating index", slog.Any("error", err))
 	}
 }
 
@@ -82,6 +169,7 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte("OK"))
 	if err != nil {
+		logger.ErrorContext(r.Context(), "error writing health check response", slog.Any("error", err))
 		return
 	}
 }

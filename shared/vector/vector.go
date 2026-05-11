@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,23 +14,7 @@ type QdrantClient struct {
 	client *qdrant.Client
 }
 
-func NewQdrantClient(url *url.URL) *QdrantClient {
-	port := strings.Split(url.String(), ":")[1]
-	portInt, err := strconv.ParseInt(port, 10, 32)
-	if err != nil {
-		panic(err)
-	}
-
-	config := &qdrant.Config{
-		Host:     url.Host,
-		Port:     int(portInt),
-		PoolSize: 1,
-	}
-
-	client, err := qdrant.NewClient(config)
-	if err != nil {
-		panic(err)
-	}
+func NewQdrantClient(client *qdrant.Client) *QdrantClient {
 	return &QdrantClient{
 		client: client,
 	}

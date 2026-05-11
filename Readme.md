@@ -50,6 +50,7 @@ All services have a /health route that returns a 200 if the service is up.
 ## Random extension ideas
 - [ ] "Rat" system to add more data for ads or websites to the embedding to have better matches.
 - [ ] Use some classification system to classify ads or websites in order to not have linear regression models on a per website basis.
+- [ ] quick return: this would essentially be a quick last 10 second history of bidrequests and bidresponses. If a user refreshes the page then we can use this to quickly return a 'winning' bid.
 
 ## Technical challenges / decisions
 
